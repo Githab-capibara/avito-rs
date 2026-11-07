@@ -7,9 +7,9 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use avito_rs::application::Monitor;
 #[cfg(feature = "api")]
 use avito_rs::api;
+use avito_rs::application::Monitor;
 use avito_rs::dto::AppConfig;
 use avito_rs::exporters;
 use avito_rs::extractors;

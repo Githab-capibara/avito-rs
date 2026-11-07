@@ -8,7 +8,9 @@
 //! (`tests/e2e_mock.rs`).
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(feature = "api")]
+use std::process::Stdio;
 
 /// Найти собранный бинарник рядом с тестом.
 fn bin() -> PathBuf {
@@ -18,7 +20,11 @@ fn bin() -> PathBuf {
         p.pop();
     }
     let cand = p.join("avito-rs");
-    assert!(cand.exists(), "avito-rs binary not found next to {}", p.display());
+    assert!(
+        cand.exists(),
+        "avito-rs binary not found next to {}",
+        p.display()
+    );
     cand
 }
 
