@@ -4,8 +4,8 @@
 //! data-mfe-state="true">` (HTML-эскейпы внутри). JS object → JSON через
 //! `find_items_node`, дальше та же нормализация в [`super::v1_json`].
 
-use super::{ExtractError, Extractor, ExtractorKind};
 use super::v1_json::V1JsonExtractor;
+use super::{ExtractError, Extractor, ExtractorKind};
 use crate::dto::Listing;
 use crate::providers::FetchedPage;
 
@@ -76,7 +76,9 @@ fn html_unescape(raw: &str) -> String {
             "apos" => Some('\''),
             "nbsp" => Some('\u{00a0}'),
             _ if entity.starts_with("#x") || entity.starts_with("#X") => {
-                u32::from_str_radix(&entity[2..], 16).ok().and_then(char::from_u32)
+                u32::from_str_radix(&entity[2..], 16)
+                    .ok()
+                    .and_then(char::from_u32)
             }
             _ if entity.starts_with('#') => {
                 entity[1..].parse::<u32>().ok().and_then(char::from_u32)
@@ -161,9 +163,11 @@ pub fn extract_state(html: &str) -> Result<Vec<Listing>, ExtractError> {
         }
     };
     match super::find_items_node(state) {
-        Some(items) => V1JsonExtractor.extract_items(items).map_err(|_| ExtractError::NoItems {
-            origin: origin.to_owned(),
-        }),
+        Some(items) => V1JsonExtractor
+            .extract_items(items)
+            .map_err(|_| ExtractError::NoItems {
+                origin: origin.to_owned(),
+            }),
         None => Err(ExtractError::NoItems {
             origin: origin.to_owned(),
         }),
@@ -233,7 +237,10 @@ mod tests {
     }
     #[test]
     fn unescapes_html_entities() {
-        assert_eq!(html_unescape("a&amp;b &lt;c&gt; &quot;d&quot;"), "a&b <c> \"d\"");
+        assert_eq!(
+            html_unescape("a&amp;b &lt;c&gt; &quot;d&quot;"),
+            "a&b <c> \"d\""
+        );
         assert_eq!(html_unescape("&#72;ello &#x69;"), "Hello i");
         assert_eq!(html_unescape("plain"), "plain");
         assert_eq!(html_unescape("bad &unk; entity"), "bad &unk; entity");

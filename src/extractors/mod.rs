@@ -74,7 +74,7 @@ pub fn active(cfg_kind: ExtractorKind) -> Box<dyn Extractor> {
         ExtractorKind::V2Html => {
             #[cfg(feature = "html-fallback")]
             {
-                Box::new(v2_html::V2HtmlExtractor::default())
+                Box::new(v2_html::V2HtmlExtractor)
             }
             #[cfg(not(feature = "html-fallback"))]
             {

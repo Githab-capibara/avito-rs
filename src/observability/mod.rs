@@ -100,8 +100,7 @@ pub struct MetricsSnapshot {
 
 /// Инициализировать `tracing-subscriber` из конфига + ротация логов.
 pub fn init_logging(cfg: &ObservabilityCfg) -> anyhow::Result<()> {
-    std::fs::create_dir_all(&cfg.log_dir)
-        .map_err(|e| anyhow::anyhow!("create log dir: {e}"))?;
+    std::fs::create_dir_all(&cfg.log_dir).map_err(|e| anyhow::anyhow!("create log dir: {e}"))?;
 
     tracing_subscriber::fmt()
         .with_max_level(

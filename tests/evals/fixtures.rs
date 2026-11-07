@@ -90,7 +90,19 @@ pub fn raw_page_cheap_only() -> String {
 }
 
 /// Собрать JSON товара из кортежа.
-fn item_from((id, path, title, desc, price, seller, address, reserved, promoted): (&str, &str, &str, &str, u64, &str, &str, bool, bool)) -> serde_json::Value {
+fn item_from(
+    (id, path, title, desc, price, seller, address, reserved, promoted): (
+        &str,
+        &str,
+        &str,
+        &str,
+        u64,
+        &str,
+        &str,
+        bool,
+        bool,
+    ),
+) -> serde_json::Value {
     item(
         id,
         path,

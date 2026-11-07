@@ -118,8 +118,7 @@ impl AvitoClient {
         }
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("read cookies: {}", path.display()))?;
-        let value: serde_json::Value =
-            serde_json::from_str(&raw).context("parse cookies json")?;
+        let value: serde_json::Value = serde_json::from_str(&raw).context("parse cookies json")?;
         let mut loaded = 0usize;
         if let Some(cookies) = value.get("cookies").and_then(|c| c.as_object()) {
             loaded = cookies.len();
@@ -416,10 +415,7 @@ fn cache_path(cfg: &AppConfig) -> PathBuf {
 fn cache_get(path: &Path, key: &str) -> Option<String> {
     let raw = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    value
-        .get(key)
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
+    value.get(key).and_then(|v| v.as_str()).map(str::to_owned)
 }
 
 /// Записать кэш (ошибка записи не критична).
@@ -460,28 +456,35 @@ mod tests {
     fn mobile_catalog_extracts_path() {
         let cfg = crate::dto::AppConfig::default();
         let u = mobile_catalog_url(&cfg, "https://www.avito.ru/all/telefony", 2);
-        assert_eq!(u, "https://m.avito.ru/api/9/items?query=all/telefony&page=2");
+        assert_eq!(
+            u,
+            "https://m.avito.ru/api/9/items?query=all/telefony&page=2"
+        );
     }
 
     #[test]
     fn mobile_catalog_honours_override() {
-        let mut cfg = crate::dto::AppConfig::default();
-        cfg.api_base_override = Some("http://127.0.0.1:18080".to_owned());
+        let build = |base: &str| crate::dto::AppConfig {
+            api_base_override: Some(base.to_owned()),
+            ..Default::default()
+        };
+        // корень сервиса → добавляются oba пути
+        let cfg = build("http://127.0.0.1:18080");
         let u = mobile_catalog_url(&cfg, "https://www.avito.ru/all/telefony", 1);
         assert_eq!(
             u,
             "http://127.0.0.1:18080/api/9/items?query=all/telefony&page=1"
         );
         assert_eq!(item_base(&cfg), "http://127.0.0.1:18080/api/1/card/items");
-        // override с полным путём каталога → не удваивается
-        cfg.api_base_override = Some("http://127.0.0.1:18080/api/9/items".to_owned());
+        // полный путь каталога → не удваивается
+        let cfg = build("http://127.0.0.1:18080/api/9/items");
         let u2 = mobile_catalog_url(&cfg, "https://www.avito.ru/all/telefony", 2);
         assert_eq!(
             u2,
             "http://127.0.0.1:18080/api/9/items?query=all/telefony&page=2"
         );
-        // override с полным путём карточки → не удваивается
-        cfg.api_base_override = Some("http://127.0.0.1:18080/api/1/card/items".to_owned());
+        // полный путь карточки → не удваивается
+        let cfg = build("http://127.0.0.1:18080/api/1/card/items");
         assert_eq!(item_base(&cfg), "http://127.0.0.1:18080/api/1/card/items");
     }
 
@@ -490,6 +493,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("avito_api_urls.json");
         cache_put(&p, "https://x", "https://api/items");
-        assert_eq!(cache_get(&p, "https://x").as_deref(), Some("https://api/items"));
+        assert_eq!(
+            cache_get(&p, "https://x").as_deref(),
+            Some("https://api/items")
+        );
     }
 }

@@ -107,10 +107,9 @@ pub fn md5_hex(input: &str) -> String {
     let mut c0: u32 = 0x98ba_dcfe;
     let mut d0: u32 = 0x1032_5476;
     let s: [u32; 64] = [
-        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
-        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
-        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
-        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
+        9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10,
+        15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
     ];
     let k: [u32; 64] = [
         0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613,
@@ -124,17 +123,17 @@ pub fn md5_hex(input: &str) -> String {
         0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb,
         0xeb86d391,
     ];
-    let mut chunk_windows: Vec<[u32; 16]> = msg
-        .chunks_exact(64)
-        .map(|chunk| {
-            let mut words = [0u32; 16];
-            for (i, w) in words.iter_mut().enumerate() {
-                let s = i * 4;
-                *w = u32::from_le_bytes([chunk[s], chunk[s + 1], chunk[s + 2], chunk[s + 3]]);
-            }
-            words
-        })
-        .collect();
+    let mut chunk_windows: Vec<[u32; 16]> = Vec::with_capacity(msg.len() / 64 + 1);
+    let mut rest: &[u8] = msg;
+    while rest.len() >= 64 {
+        let mut words = [0u32; 16];
+        for (i, w) in words.iter_mut().enumerate() {
+            let s = i * 4;
+            *w = u32::from_le_bytes([rest[s], rest[s + 1], rest[s + 2], rest[s + 3]]);
+        }
+        chunk_windows.push(words);
+        rest = &rest[64..];
+    }
     chunk_windows.truncate(chunk_windows.len());
     for m in chunk_windows {
         let (mut a, mut b, mut c, mut d) = (a0, b0, c0, d0);
@@ -145,10 +144,7 @@ pub fn md5_hex(input: &str) -> String {
                 32..=47 => (b ^ c ^ d, (3 * i + 5) % 16),
                 _ => (c ^ (b | !d), (7 * i) % 16),
             };
-            let f = f
-                .wrapping_add(a)
-                .wrapping_add(k[i])
-                .wrapping_add(m[g]);
+            let f = f.wrapping_add(a).wrapping_add(k[i]).wrapping_add(m[g]);
             a = d;
             d = c;
             c = b;
@@ -221,8 +217,14 @@ mod tests {
 
     #[test]
     fn single_path_is_avito_ext() {
-        assert_eq!(single_path(Path::new("/tmp"), "csv"), PathBuf::from("/tmp/avito.csv"));
-        assert_eq!(single_path(Path::new("/tmp"), "xlsx"), PathBuf::from("/tmp/avito.xlsx"));
+        assert_eq!(
+            single_path(Path::new("/tmp"), "csv"),
+            PathBuf::from("/tmp/avito.csv")
+        );
+        assert_eq!(
+            single_path(Path::new("/tmp"), "xlsx"),
+            PathBuf::from("/tmp/avito.xlsx")
+        );
     }
 
     #[test]

@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use avito_rs::application::Monitor;
+#[cfg(feature = "api")]
+use avito_rs::api;
 use avito_rs::dto::AppConfig;
 use avito_rs::exporters;
 use avito_rs::extractors;
@@ -48,6 +50,16 @@ enum Command {
         #[arg(short, long, default_value = "config.toml")]
         config: std::path::PathBuf,
     },
+    /// REST API управления монитором (требует feature `api`).
+    #[cfg(feature = "api")]
+    Serve {
+        /// Путь к конфигу.
+        #[arg(short, long, default_value = "config.toml")]
+        config: std::path::PathBuf,
+        /// Адрес прослушивания: `host:port`.
+        #[arg(short, long, default_value = "127.0.0.1:8080")]
+        bind: String,
+    },
     /// Проверить конфиг без запуска монитора.
     ValidateConfig {
         /// Путь к конфигу.
@@ -60,6 +72,8 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Command::Run { config, once } => run(config, once),
+        #[cfg(feature = "api")]
+        Command::Serve { config, bind } => serve(config, bind),
         Command::Status { config } => status(&config),
         Command::ValidateConfig { config } => validate(&config),
     }
@@ -73,10 +87,10 @@ fn load_config(path: &std::path::Path) -> Result<AppConfig> {
         }
         anyhow::bail!("config not found: {}", path.display());
     }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("read config {}", path.display()))?;
-    let cfg: AppConfig = toml::from_str(&raw)
-        .with_context(|| format!("parse config {}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(path).with_context(|| format!("read config {}", path.display()))?;
+    let cfg: AppConfig =
+        toml::from_str(&raw).with_context(|| format!("parse config {}", path.display()))?;
     Ok(cfg)
 }
 
@@ -85,8 +99,8 @@ fn validate(path: &std::path::Path) -> Result<()> {
     let cfg = load_config(path)?;
     let redactor = Redactor::from_config(&cfg);
 
-    let extractor_kind = extractors::ExtractorKind::parse(&cfg.extractor)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+    let extractor_kind =
+        extractors::ExtractorKind::parse(&cfg.extractor).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if cfg.urls.is_empty() {
         eprintln!("WARN: no urls configured — nothing to monitor");
@@ -97,7 +111,12 @@ fn validate(path: &std::path::Path) -> Result<()> {
     if cfg.pages_per_url == 0 {
         anyhow::bail!("[app] pages_per_url must be >= 1");
     }
-    if cfg.filters.min_price > 0 && cfg.filters.max_price.is_some_and(|m| cfg.filters.min_price > m) {
+    if cfg.filters.min_price > 0
+        && cfg
+            .filters
+            .max_price
+            .is_some_and(|m| cfg.filters.min_price > m)
+    {
         anyhow::bail!("[filters] min_price > max_price");
     }
     if cfg.export.format != "csv" && cfg.export.format != "xlsx" {
@@ -107,13 +126,19 @@ fn validate(path: &std::path::Path) -> Result<()> {
         eprintln!("WARN: [security] api_key empty — API auth disabled");
     }
 
-    println!("config OK: {} url(s), db={}",
+    println!(
+        "config OK: {} url(s), db={}",
         cfg.urls.len(),
-        redactor.redact(&cfg.db_path.display().to_string()));
-    println!("  fetch_mode={} extractor={} (kind={extractor_kind:?})",
-        cfg.fetch_mode, cfg.extractor);
-    println!("  interval={}s rpm={} pages_per_url={} max_concurrent={}",
-        cfg.interval_sec, cfg.req_per_min, cfg.pages_per_url, cfg.max_concurrent);
+        redactor.redact(&cfg.db_path.display().to_string())
+    );
+    println!(
+        "  fetch_mode={} extractor={} (kind={extractor_kind:?})",
+        cfg.fetch_mode, cfg.extractor
+    );
+    println!(
+        "  interval={}s rpm={} pages_per_url={} max_concurrent={}",
+        cfg.interval_sec, cfg.req_per_min, cfg.pages_per_url, cfg.max_concurrent
+    );
     for (k, v) in cfg.flat_for_log() {
         println!("  {k} = {v}");
     }
@@ -124,12 +149,46 @@ fn validate(path: &std::path::Path) -> Result<()> {
 fn status(path: &std::path::Path) -> Result<()> {
     let cfg = load_config(path)?;
     let store = SqliteStore::open(&cfg.db_path)?;
-    println!("db: {} (rows: {})", cfg.db_path.display(), store.seen_count()?);
+    println!(
+        "db: {} (rows: {})",
+        cfg.db_path.display(),
+        store.seen_count()?
+    );
     println!("urls: {}", cfg.urls.len());
     for u in &cfg.urls {
         println!("  {}", u.value);
     }
     Ok(())
+}
+
+/// `serve`: HTTP API без запуска цикла (монитором управляют через `/start`).
+#[cfg(feature = "api")]
+fn serve(path: std::path::PathBuf, bind: String) -> Result<()> {
+    let cfg = load_config(&path)?;
+    observability::init_logging(&cfg.observability)?;
+    let metrics = Arc::new(Metrics::default());
+    let state = Arc::new(api::server::ApiState::new(
+        Arc::new(cfg.clone()),
+        Arc::clone(&metrics),
+    ));
+    let key = cfg.security.api_key.clone();
+    let router = api::server::router(state, key);
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(&bind)
+            .await
+            .with_context(|| format!("bind {bind}"))?;
+        tracing::info!("api listening on {bind}");
+        axum::serve(listener, router)
+            .with_graceful_shutdown(async {
+                let _ = tokio::signal::ctrl_c().await;
+            })
+            .await
+            .context("api server")?;
+        Ok(())
+    })
 }
 
 /// `run`: запустить монитор.
@@ -142,7 +201,10 @@ fn run(path: std::path::PathBuf, once: bool) -> Result<()> {
     observability::init_logging(&cfg.observability)?;
 
     if cfg.urls.is_empty() {
-        anyhow::bail!("no urls configured — add `urls = [...]` to {}", path.display());
+        anyhow::bail!(
+            "no urls configured — add `urls = [...]` to {}",
+            path.display()
+        );
     }
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -150,7 +212,6 @@ fn run(path: std::path::PathBuf, once: bool) -> Result<()> {
         .build()?;
     runtime.block_on(monitor_main(cfg, path))
 }
-
 
 /// Собрать экспортёр результатов (порт `build_result_storage`).
 ///
@@ -181,10 +242,7 @@ async fn monitor_main(cfg: AppConfig, config_path: std::path::PathBuf) -> Result
     let metrics = Arc::new(Metrics::new());
     let store = Arc::new(SqliteStore::open(&cfg.db_path)?);
     let exporter: Arc<dyn exporters::ResultExporter> = build_exporter(&cfg)?;
-    let fetcher = Arc::new(AvitoClient::new(
-        Arc::clone(&cfg),
-        Arc::clone(&redactor),
-    )?);
+    let fetcher = Arc::new(AvitoClient::new(Arc::clone(&cfg), Arc::clone(&redactor))?);
 
     tracing::info!(
         config = %redactor.redact(&config_path.display().to_string()),
@@ -202,9 +260,10 @@ async fn monitor_main(cfg: AppConfig, config_path: std::path::PathBuf) -> Result
         Arc::clone(&metrics),
     );
 
-    let tg = Arc::new(
-        providers::telegram::TelegramNotifier::from_config(&cfg, Arc::clone(&redactor))?,
-    );
+    let tg = Arc::new(providers::telegram::TelegramNotifier::from_config(
+        &cfg,
+        Arc::clone(&redactor),
+    )?);
     let vk = Arc::new(providers::vk::VkNotifier::from_config(
         &cfg,
         (*redactor).clone(),

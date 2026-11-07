@@ -1,0 +1,61 @@
+# Пример конфига avito-rs — рабочий старт.
+# Скопируй в config.toml и подставь свои url/token.
+# Все ключи: docs/config-reference.md
+
+# --- цикл ---
+interval_sec = 60
+req_per_min = 30
+max_concurrent = 5
+timeout_sec = 30
+pages_per_url = 1
+pause_between_links_sec = 0
+
+# --- что парсить ---
+extractor = "v1_json"      # v1_json | v2_html (нужен feature html-fallback)
+fetch_mode = "spfa_url"    # spfa_url | direct_html | mobile_api
+parse_views = true
+parse_description = true
+
+# --- свои cookies Авито (обходит «Fingerprint») ---
+use_own_cookies = false
+own_cookies_path = "storage/own_cookies.json"
+
+# --- БД дедупа ---
+db_path = "avito.db"
+
+urls = [
+    "https://www.avito.ru/krasnodar/telefony",
+    "https://www.avito.ru/krasnodar/noutbuki",
+]
+
+[filters]
+max_price = 60000
+min_price = 1000
+max_age_sec = 86400        # 0 = без ограничения по возрасту
+ignore_reserved = true
+ignore_promotion = false
+region = "Краснодар"
+keywords_white = []        # пусто = все слова
+keywords_black = ["на запчасти", "сломан"]
+
+[export]
+dir = "out"
+format = "csv"             # csv (xlsx требует feature xlsx)
+one_file_per_link = false
+
+[notifications]
+telegram_bot_token = ""    # 123456:ABC... — пусто = выключено
+telegram_chat_ids = []     # [100500, 200700]
+telegram_only_text = false
+vk_token = ""
+vk_peer_ids = []
+
+[observability]
+log_level = "info"         # trace|debug|info|warn|error
+log_dir = "logs"
+log_keep_days = 7
+log_max_files = 20
+
+[security]
+api_key = ""               # пусто = API без авторизации (dev only)
+redact_secrets = true

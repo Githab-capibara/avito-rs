@@ -51,7 +51,9 @@ impl Redactor {
             // user:pass@host:port — маскируем и весь URL, и только креды
             if let Some(at) = p.find('@') {
                 let creds = &p[..at];
-                let creds = creds.trim_start_matches("http://").trim_start_matches("socks5://");
+                let creds = creds
+                    .trim_start_matches("http://")
+                    .trim_start_matches("socks5://");
                 if !creds.is_empty() {
                     secrets.push(format!("{}@", creds));
                 }

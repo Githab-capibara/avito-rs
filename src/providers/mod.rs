@@ -81,6 +81,10 @@ impl std::fmt::Display for BlockReason {
 /// Трейт-порт фетчера. Одна реализация (Avito), но тесты берут мок.
 ///
 /// Нативный `async fn` в трейте (Rust ≥1.75) — без крейта `async-trait`.
+///
+/// clippy жалуется на отсутствие auto-trait bounds — осознанный трейд-офф:
+/// свой трейт дешевле, чем крейт `async-trait`.
+#[allow(async_fn_in_trait)]
 pub trait PageFetcher: Send + Sync {
     /// Получить страницу/JSON.
     async fn fetch(&self, url: &str) -> anyhow::Result<FetchedPage>;

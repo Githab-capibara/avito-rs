@@ -110,9 +110,7 @@ impl V1JsonExtractor {
         let marker = "/brands/";
         let start = raw.find(marker)? + marker.len();
         let rest = &raw[start..];
-        let end = rest
-            .find(['/', '?', '#'])
-            .unwrap_or(rest.len());
+        let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
         let slug = &rest[..end];
         (!slug.is_empty()).then(|| slug.to_owned())
     }
@@ -175,8 +173,8 @@ impl V1JsonExtractor {
     /// # Errors
     /// Узел не десериализуется в `ItemsResponse`.
     pub fn extract_items(&self, node: &serde_json::Value) -> Result<Vec<Listing>, String> {
-        let parsed: ItemsResponse = serde_json::from_value(node.clone())
-            .map_err(|e| e.to_string())?;
+        let parsed: ItemsResponse =
+            serde_json::from_value(node.clone()).map_err(|e| e.to_string())?;
         Ok(parsed
             .items
             .into_iter()
@@ -190,9 +188,10 @@ impl V1JsonExtractor {
         let normalized_price = item.normalized_price.as_deref().and_then(parse_price_text);
         let id = item.id.as_ref().and_then(Self::normalize_id)?;
         let iva = item.iva.as_ref();
-        let seller_from_slug = item.seller_id.as_ref().map(|s| {
-            Self::extract_seller_slug(s).unwrap_or_else(|| s.clone())
-        });
+        let seller_from_slug = item
+            .seller_id
+            .as_ref()
+            .map(|s| Self::extract_seller_slug(s).unwrap_or_else(|| s.clone()));
         Some(Listing {
             id,
             title: item.title.clone(),
@@ -204,17 +203,19 @@ impl V1JsonExtractor {
                 .or(normalized_price),
             url_path: item.url_path.clone(),
             sort_time_stamp: item.sort_time_stamp,
-            seller_id: seller_from_slug.or_else(|| item.seller_id.clone().filter(|s| !s.is_empty())),
-            formatted_address: item
-                .geo
-                .as_ref()
-                .and_then(|g| g.formatted_address.clone()),
+            seller_id: seller_from_slug
+                .or_else(|| item.seller_id.clone().filter(|s| !s.is_empty())),
+            formatted_address: item.geo.as_ref().and_then(|g| g.formatted_address.clone()),
             is_reserved: item.is_reserved.unwrap_or(false),
             is_promotion: iva.is_some_and(Self::is_promoted),
             total_views: None,
             today_views: None,
             first_image_url: item.images.as_ref().and_then(Self::first_image),
-            images: item.images.as_ref().map(Self::all_images).unwrap_or_default(),
+            images: item
+                .images
+                .as_ref()
+                .map(Self::all_images)
+                .unwrap_or_default(),
             coords: item.coords.clone(),
             phone: None,
         })
@@ -227,10 +228,7 @@ impl Extractor for V1JsonExtractor {
     }
 
     fn extract(&self, page: &FetchedPage) -> Result<Vec<Listing>, ExtractError> {
-        let payload = page
-            .body
-            .as_ref()
-            .ok_or(ExtractError::NoJson)?;
+        let payload = page.body.as_ref().ok_or(ExtractError::NoJson)?;
         let items_node = super::find_items_node(payload).ok_or_else(|| ExtractError::NoItems {
             origin: page.url.clone(),
         })?;
@@ -300,8 +298,14 @@ mod extra_tests {
 
     #[test]
     fn seller_slug_from_brands_path() {
-        assert_eq!(V1JsonExtractor::extract_seller_slug("https://x/brands/foo-bar/baz"), Some("foo-bar".to_owned()));
-        assert_eq!(V1JsonExtractor::extract_seller_slug("/brands/a?x=1"), Some("a".to_owned()));
+        assert_eq!(
+            V1JsonExtractor::extract_seller_slug("https://x/brands/foo-bar/baz"),
+            Some("foo-bar".to_owned())
+        );
+        assert_eq!(
+            V1JsonExtractor::extract_seller_slug("/brands/a?x=1"),
+            Some("a".to_owned())
+        );
         assert_eq!(V1JsonExtractor::extract_seller_slug("/brands/"), None);
     }
 }

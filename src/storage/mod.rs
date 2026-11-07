@@ -62,8 +62,8 @@ impl SqliteStore {
                     .with_context(|| format!("create db dir {}", parent.display()))?;
             }
         }
-        let conn = Connection::open(path)
-            .with_context(|| format!("open sqlite {}", path.display()))?;
+        let conn =
+            Connection::open(path).with_context(|| format!("open sqlite {}", path.display()))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")
             .context("set pragmas")?;
         let store = Self {
@@ -139,11 +139,7 @@ impl SqliteStore {
     pub fn last_price(&self, id: &str) -> Result<Option<u64>> {
         let price: Option<i64> = self
             .lock()
-            .query_row(
-                "SELECT price FROM prices WHERE id = ?1",
-                [id],
-                |r| r.get(0),
-            )
+            .query_row("SELECT price FROM prices WHERE id = ?1", [id], |r| r.get(0))
             .ok();
         Ok(price.and_then(|p| u64::try_from(p).ok()))
     }
@@ -233,7 +229,6 @@ impl ListingStore for SqliteStore {
         Self::set_price(self, id, price)
     }
 }
-
 
 impl SqliteStore {
     /// In-memory БД (для интеграционных тестов и `--once` без диска).

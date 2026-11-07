@@ -250,7 +250,11 @@ mod tests {
             min_price: 50,
             ..FilterCfg::allow_all()
         };
-        let ads = vec![ad("1", "t", "", 10), ad("2", "t", "", 75), ad("3", "t", "", 500)];
+        let ads = vec![
+            ad("1", "t", "", 10),
+            ad("2", "t", "", 75),
+            ad("3", "t", "", 500),
+        ];
         let out = apply(&cfg, ads);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].id, "2");

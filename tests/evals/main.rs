@@ -21,10 +21,17 @@ fn page_from_json(raw: &str) -> FetchedPage {
 #[tokio::test]
 async fn extracts_titles_prices_and_ids() {
     let fetcher = fixtures::FixtureFetcher::new();
-    let page = fetcher.fetch("https://www.avito.ru/all/telefony").await.unwrap();
+    let page = fetcher
+        .fetch("https://www.avito.ru/all/telefony")
+        .await
+        .unwrap();
     let extractor = active(ExtractorKind::V1Json);
     let ads = extractor.extract(&page).unwrap();
-    assert_eq!(ads.len(), fixtures::EXPECTED.len(), "fixture items preserved");
+    assert_eq!(
+        ads.len(),
+        fixtures::EXPECTED.len(),
+        "fixture items preserved"
+    );
     for (ad, want) in ads.iter().zip(fixtures::EXPECTED.iter()) {
         assert_eq!(ad.id, want.0);
         assert_eq!(ad.price, want.1);
@@ -50,10 +57,7 @@ async fn price_drop_produces_new_listing() {
         }
     }
     assert!(fresh > 0, "first pass must be fresh");
-    let second = ads
-        .iter()
-        .filter(|ad| !seen.is_seen(ad).unwrap())
-        .count();
+    let second = ads.iter().filter(|ad| !seen.is_seen(ad).unwrap()).count();
     assert_eq!(second, 0, "second pass fully deduped");
 }
 
@@ -115,7 +119,10 @@ async fn v2_extractor_reports_no_json() {
         raw_body: b"<html><body>no state script</body></html>".to_vec(),
     };
     let result = active(ExtractorKind::V2Html).extract(&page);
-    assert!(matches!(result.unwrap_err(), ExtractError::NoJson), "v2 must fail no-json");
+    assert!(
+        matches!(result.unwrap_err(), ExtractError::NoJson),
+        "v2 must fail no-json"
+    );
 }
 
 #[tokio::test]
@@ -157,7 +164,7 @@ async fn v2_extractor_falls_back_or_extracts() {
 
 #[tokio::test]
 async fn full_pipeline_from_fixture_to_csv() {
-    use avito_rs::exporters::{ResultExporter, csv::CsvExporter};
+    use avito_rs::exporters::{csv::CsvExporter, ResultExporter};
     let ads = active(ExtractorKind::V1Json)
         .extract(&page_from_json(&fixtures::raw_page()))
         .unwrap();

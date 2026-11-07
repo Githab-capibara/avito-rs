@@ -78,10 +78,7 @@ impl VkNotifier {
                 Ok(r) => {
                     let status = r.status().as_u16();
                     let text = r.text().await.unwrap_or_default();
-                    tracing::warn!(
-                        "vk {method} {status}: {}",
-                        self.redactor.redact(&text)
-                    );
+                    tracing::warn!("vk {method} {status}: {}", self.redactor.redact(&text));
                     if attempt == 3 {
                         return Err(anyhow::anyhow!("vk {method} http {status}"));
                     }
@@ -138,17 +135,9 @@ impl VkNotifier {
         let Some(bytes) = bytes else {
             return Ok(None);
         };
-        let peer = self
-            .peer_ids
-            .first()
-            .copied()
-            .unwrap_or(0)
-            .to_string();
+        let peer = self.peer_ids.first().copied().unwrap_or(0).to_string();
         let server: serde_json::Value = self
-            .call(
-                "photos.getMessagesUploadServer",
-                &[("peer_id", peer)],
-            )
+            .call("photos.getMessagesUploadServer", &[("peer_id", peer)])
             .await?;
         let upload_url = server
             .pointer("/response/upload_url")
@@ -194,11 +183,8 @@ impl VkNotifier {
         if server_id.is_empty() || photo.is_empty() {
             return Ok(None);
         }
-        let params: Vec<(&str, String)> = vec![
-            ("server", server_id),
-            ("photo", photo),
-            ("hash", hash),
-        ];
+        let params: Vec<(&str, String)> =
+            vec![("server", server_id), ("photo", photo), ("hash", hash)];
         let resp = self.call("photos.saveMessagesPhoto", &params).await?;
         // Вложение: `photo<owner>_<id>` из ответа saveMessagesPhoto
         let attachment = resp

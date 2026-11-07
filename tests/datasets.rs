@@ -13,8 +13,8 @@ fn load(name: &str) -> FetchedPage {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("evals/datasets/v1")
         .join(name);
-    let raw = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let raw =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     FetchedPage {
         url: "https://www.avito.ru/all/telefony".to_owned(),
         status: 200,
@@ -25,12 +25,13 @@ fn load(name: &str) -> FetchedPage {
 
 #[tokio::test]
 async fn dataset_catalog_two_ads_matches_expected() {
-    let expected: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("evals/datasets/v1/expected_listings.json"),
-        ).unwrap())
-        .unwrap();
+    let expected: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("evals/datasets/v1/expected_listings.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
     let page = load("catalog_two_ads.json");
     let ads = active(ExtractorKind::V1Json)
         .extract(&page)
@@ -39,7 +40,11 @@ async fn dataset_catalog_two_ads_matches_expected() {
         .iter()
         .map(|a| serde_json::json!({ "id": a.id, "price": a.price, "title": a.title }))
         .collect();
-    assert_eq!(serde_json::json!(&got), expected, "golden listing set drifted");
+    assert_eq!(
+        serde_json::json!(&got),
+        expected,
+        "golden listing set drifted"
+    );
 }
 
 #[tokio::test]
@@ -47,7 +52,10 @@ async fn dataset_price_drop_is_single_fresh_ad() {
     let page = load("catalog_price_drop.json");
     let ads = active(ExtractorKind::V1Json).extract(&page).unwrap();
     assert_eq!(ads.len(), 1);
-    assert_eq!(ads[0].id, "5050505050", "price drop keeps the cheap listing");
+    assert_eq!(
+        ads[0].id, "5050505050",
+        "price drop keeps the cheap listing"
+    );
     assert_eq!(ads[0].price, Some(49_999));
 }
 

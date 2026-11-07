@@ -18,14 +18,28 @@ fn regenerate_datasets() {
     let page = fixtures::raw_page();
     let expected: Vec<serde_json::Value> = fixtures::EXPECTED
         .iter()
-        .map(|(id, price, title)| {
-            serde_json::json!({ "id": id, "price": price, "title": title })
-        })
+        .map(|(id, price, title)| serde_json::json!({ "id": id, "price": price, "title": title }))
         .collect();
 
-    write(&dir, "catalog_two_ads.json", &serde_json::to_string_pretty(&serde_json::from_str::<serde_json::Value>(&page).unwrap()).unwrap());
-    write(&dir, "catalog_price_drop.json", &serde_json::to_string_pretty(&serde_json::from_str::<serde_json::Value>(&fixtures::raw_page_cheap_only()).unwrap()).unwrap());
-    write(&dir, "expected_listings.json", &serde_json::to_string_pretty(&expected).unwrap());
+    write(
+        &dir,
+        "catalog_two_ads.json",
+        &serde_json::to_string_pretty(&serde_json::from_str::<serde_json::Value>(&page).unwrap())
+            .unwrap(),
+    );
+    write(
+        &dir,
+        "catalog_price_drop.json",
+        &serde_json::to_string_pretty(
+            &serde_json::from_str::<serde_json::Value>(&fixtures::raw_page_cheap_only()).unwrap(),
+        )
+        .unwrap(),
+    );
+    write(
+        &dir,
+        "expected_listings.json",
+        &serde_json::to_string_pretty(&expected).unwrap(),
+    );
 }
 
 /// Записать файл с завершающим переводом строки.

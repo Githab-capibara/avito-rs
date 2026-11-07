@@ -74,9 +74,8 @@ impl ApiState {
 }
 
 /// Роутер API.
-#[must_use]
 pub fn router(state: Arc<ApiState>, api_key: String) -> Router {
-    let authed = Router::new()
+    Router::new()
         .route("/start", post(start))
         .route("/stop", post(stop))
         .route("/urls", get(list_urls).put(set_urls))
@@ -84,8 +83,7 @@ pub fn router(state: Arc<ApiState>, api_key: String) -> Router {
         .route("/metrics", get(get_metrics))
         .route("/status", get(get_status))
         .layer(axum::Extension(ApiKey(api_key)))
-        .with_state(state);
-    authed
+        .with_state(state)
 }
 
 /// Пустой ответ 200.
@@ -149,13 +147,7 @@ async fn get_metrics(State(state): State<Arc<ApiState>>) -> Response {
 
 async fn list_urls(State(state): State<Arc<ApiState>>) -> Response {
     let cfg = state.cfg.read().await.clone();
-    Json(
-        cfg.urls
-            .iter()
-            .map(|u| u.value.clone())
-            .collect::<Vec<_>>(),
-    )
-    .into_response()
+    Json(cfg.urls.iter().map(|u| u.value.clone()).collect::<Vec<_>>()).into_response()
 }
 
 async fn set_urls(

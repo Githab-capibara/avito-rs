@@ -65,6 +65,19 @@
 Остальные секции — `[proxy]`, `[cookie_service]`, `[security]`,
 `[observability]`.
 
+## `serve` (feature `api`)
+
+Адрес прослушивания задаётся флагом CLI, не конфигом:
+
+```bash
+avito-rs serve --config config.toml --bind 127.0.0.1:8080
+```
+
+Эндпоинты: `GET /status`, `GET /metrics`, `GET /urls`, `PUT /urls`,
+`GET /config`, `POST /start`, `POST /stop`. Аутентификация — заголовок
+`X-Api-Key` со значением `[security] api_key`; пустой `api_key` отключает
+проверку (только для разработки). Цикл монитора `serve` не запускает.
+
 ## Пример
 
 ```toml
@@ -101,7 +114,12 @@ redact_secrets = true
 
 [observability]
 level = "info"
+log_dir = "logs"
+log_keep_days = 7
+log_max_files = 20
 ```
+
+Готовый файл со всеми ключами — `config.example.toml` в корне репозитория.
 
 ## ENV
 

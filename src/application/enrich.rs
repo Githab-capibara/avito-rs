@@ -19,7 +19,9 @@ use crate::providers::avito::AvitoClient;
 
 /// Порт `_extract_item_details`: (описание, всего, сегодня).
 #[must_use]
-pub fn extract_item_details(payload: &serde_json::Value) -> (Option<String>, Option<u64>, Option<u64>) {
+pub fn extract_item_details(
+    payload: &serde_json::Value,
+) -> (Option<String>, Option<u64>, Option<u64>) {
     let mobile = nested(payload, &["success", "mobile"]);
     let mobile_views = nested(&mobile, &["stats", "views"]);
     let card_params = nested(
@@ -28,8 +30,7 @@ pub fn extract_item_details(payload: &serde_json::Value) -> (Option<String>, Opt
     );
     let card_views = nested(&card_params, &["metaDataAndStats", "views"]);
 
-    let total = count(mobile_views.get("total"))
-        .or_else(|| count(card_views.get("total")));
+    let total = count(mobile_views.get("total")).or_else(|| count(card_views.get("total")));
     let today = count(mobile_views.get("today")).or_else(|| {
         count(
             card_views
@@ -125,8 +126,7 @@ pub async fn enrich(
             tracing::warn!("card payload for id {id} is not JSON");
             continue;
         };
-        let (full_description, total_views, today_views) =
-            extract_item_details(payload);
+        let (full_description, total_views, today_views) = extract_item_details(payload);
         if views {
             ad.total_views = total_views;
             ad.today_views = today_views;

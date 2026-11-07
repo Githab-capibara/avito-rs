@@ -61,6 +61,7 @@ TOML
 ./target/release/avito-rs run --config config.toml --once   # одиночный проход
 ./target/release/avito-rs run --config config.toml          # вечный цикл, Ctrl+C = стоп
 ./target/release/avito-rs status --config config.toml        # состояние БД
+./target/release/avito-rs serve --config config.toml --bind 127.0.0.1:8080   # REST API (нужен --features api)
 ```
 
 ## Ключевые решения (ADR)
@@ -71,12 +72,14 @@ TOML
 | Нет `teloxide` / `vk-sdk` | 4 метода Bot API и 3 метода VK API проще держать в reqwest | [02](./docs/adr/02-no-notif-sdks.md) |
 | `serde(rename_all = "camelCase")` на `Item` | Иначе `priceDetailed`/`urlPath` молча игнорировались | [03](./docs/adr/03-camelcase-item-fields.md) |
 | lib + bin раздельно | интеграционные тесты (`tests/`) требуют публичного API | [04](./docs/adr/04-lib-bin-split.md) |
+| `api_base_override` | e2e-прогон против мока Авито без cookies/прокси | [05](./docs/adr/05-api-base-override-for-testability.md) |
+| Команда `serve` | модуль `src/api/` был мёртвым кодом без CLI-входа | [06](./docs/adr/06-rest-api-serve-subcommand.md) |
 
 ## Feature flags
 
 | Флаг | Включает | По умолчанию |
 |------|----------|--------------|
-| `api` | REST API (`axum`): `/status`, `/start`, `/stop` | выкл |
+| `api` | REST API (`axum`) + команда `serve` | выкл |
 | `xlsx` | экспорт в `.xlsx` (`rust_xlsxwriter`) | выкл |
 | `html-fallback` | v2-экстрактор через `<script data-mfe-state>` (`scraper`) | выкл |
 

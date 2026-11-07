@@ -169,13 +169,20 @@ impl TelegramNotifier {
                     Ok(r) => {
                         let status = r.status();
                         let body = r.text().await.unwrap_or_default();
-                        tracing::warn!("tg sendPhoto URL {status}: {}", self.redactor.redact(&body));
+                        tracing::warn!(
+                            "tg sendPhoto URL {status}: {}",
+                            self.redactor.redact(&body)
+                        );
                         if status.as_u16() == 400 {
-                            tracing::info!("sendPhoto URL rejected (400), retrying with image bytes");
+                            tracing::info!(
+                                "sendPhoto URL rejected (400), retrying with image bytes"
+                            );
                             return match self.send_photo_bytes(chat_id, url, &text).await {
                                 Ok(()) => Ok(()),
                                 Err(e) => {
-                                    tracing::warn!("multipart upload failed, falling back to text-only: {e}");
+                                    tracing::warn!(
+                                        "multipart upload failed, falling back to text-only: {e}"
+                                    );
                                     self.send(chat_id, &text).await
                                 }
                             };
@@ -207,12 +214,17 @@ impl TelegramNotifier {
                 .send()
                 .await
                 .with_context(|| {
-                    format!("tg sendMessage to {chat_id}: {}", self.redactor.redact(&url))
+                    format!(
+                        "tg sendMessage to {chat_id}: {}",
+                        self.redactor.redact(&url)
+                    )
                 });
             match res {
                 Ok(r) if r.status().is_success() => {
-                    let payload: serde_json::Value =
-                        r.json().await.map_err(|e| anyhow::anyhow!("tg body: {e}"))?;
+                    let payload: serde_json::Value = r
+                        .json()
+                        .await
+                        .map_err(|e| anyhow::anyhow!("tg body: {e}"))?;
                     if payload.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                         return Ok(());
                     }
@@ -221,20 +233,22 @@ impl TelegramNotifier {
                 Ok(r) => {
                     let status = r.status().as_u16();
                     let body_text = r.text().await.unwrap_or_default();
-                    tracing::warn!(
-                        "tg {status}: {}",
-                        self.redactor.redact(&body_text)
-                    );
+                    tracing::warn!("tg {status}: {}", self.redactor.redact(&body_text));
                 }
                 Err(e) => {
-                    tracing::warn!("tg request failed: {}", self.redactor.redact(&e.to_string()));
+                    tracing::warn!(
+                        "tg request failed: {}",
+                        self.redactor.redact(&e.to_string())
+                    );
                 }
             }
             if attempt < 3 {
                 tokio::time::sleep(backoff.delay_for(attempt)).await;
             }
         }
-        Err(anyhow::anyhow!("telegram sendMessage failed for chat {chat_id}"))
+        Err(anyhow::anyhow!(
+            "telegram sendMessage failed for chat {chat_id}"
+        ))
     }
 
     /// Разослать уведомление во все чаты (порт `notify_many`).

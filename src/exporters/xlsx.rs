@@ -155,7 +155,7 @@ impl XlsxExporter {
         let sheet = workbook.add_worksheet();
         let format = Format::new().set_bold();
         for (col, head) in XLSX_HEADERS.iter().enumerate() {
-            sheet.write_string(0, col as u16, *head, &format)?;
+            sheet.write_string(0, col as u16, head, &format)?;
         }
         workbook.close().map_err(xlsx_err)?;
         Ok(())
@@ -177,7 +177,7 @@ impl XlsxExporter {
         let sheet = workbook.add_worksheet();
         let format = Format::new().set_bold();
         for (col, head) in XLSX_HEADERS.iter().enumerate() {
-            sheet.write_string(0, col as u16, *head, &format)?;
+            sheet.write_string(0, col as u16, head, &format)?;
         }
         let mut row: u32 = 1;
         for cells in &old {
@@ -212,8 +212,7 @@ fn xlsx_err(e: XlsxError) -> anyhow::Error {
 /// Прочитать все строки существующей книги (best-effort: zip+xml вручную).
 fn read_all_rows(path: &std::path::Path) -> Result<Vec<Vec<String>>> {
     // Минимальный парсер: смотрим <row><c ...><v>text</v></c></row>
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let text = String::from_utf8_lossy(&bytes);
     let xml = unzip_first_sheet(&text).unwrap_or_default();
     Ok(parse_rows(&xml))
@@ -304,7 +303,11 @@ pub fn row_cells(ad: &Listing) -> Vec<String> {
         excel_safe(&address_user(ad)),
         excel_safe(&coords(ad)),
         excel_safe(&images(ad)),
-        if ad.is_promotion { "Да".to_owned() } else { "Нет".to_owned() },
+        if ad.is_promotion {
+            "Да".to_owned()
+        } else {
+            "Нет".to_owned()
+        },
         ad.total_views.map(|v| v.to_string()).unwrap_or_default(),
         ad.today_views.map(|v| v.to_string()).unwrap_or_default(),
         excel_safe(ad.phone.as_deref().unwrap_or("")),
@@ -360,10 +363,15 @@ mod tests {
     }
     #[test]
     fn coords_render_pair() {
-        let mut ad = Listing::default();
-        ad.coords = Some(serde_json::json!({"lat": 45.0, "lng": 39.0}));
+        let ad = Listing {
+            coords: Some(serde_json::json!({"lat": 45.0, "lng": 39.0})),
+            ..Default::default()
+        };
         assert_eq!(coords(&ad), "45;39");
-        ad.coords = Some(serde_json::json!({"address_user": "Krasnodar"}));
+        let ad = Listing {
+            coords: Some(serde_json::json!({"address_user": "Krasnodar"})),
+            ..Default::default()
+        };
         assert_eq!(address_user(&ad), "Krasnodar");
     }
     #[test]
@@ -371,10 +379,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("out.xlsx");
         let exp = XlsxExporter::new(&path);
-        let mut ad = Listing::default();
-        ad.id = "1".to_owned();
-        ad.title = Some("T".to_owned());
-        ad.price = Some(100);
+        let ad = Listing {
+            id: "1".to_owned(),
+            title: Some("T".to_owned()),
+            price: Some(100),
+            ..Default::default()
+        };
         exp.save(std::slice::from_ref(&ad)).unwrap();
         assert!(path.exists());
     }

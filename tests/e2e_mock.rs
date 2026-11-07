@@ -139,7 +139,7 @@ fn serve(mut stream: TcpStream, counter: Arc<AtomicUsize>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let mut buf = [0u8; 16_384];
     let Ok(n) = stream.read(&mut buf) else { return };
-    let req = String::from_utf8_lossy(&buf[..n]).to_owned();
+    let req = String::from_utf8_lossy(&buf[..n]);
     counter.fetch_add(1, Ordering::SeqCst);
     let path = req
         .lines()
@@ -166,7 +166,12 @@ fn serve(mut stream: TcpStream, counter: Arc<AtomicUsize>) {
 }
 
 /// Конфиг для теста: mock base, строгие фильтры, CSV в tmp.
-fn write_config(dir: &std::path::Path, base: &str, db: &std::path::Path, out: &std::path::Path) -> Result<PathBuf> {
+fn write_config(
+    dir: &std::path::Path,
+    base: &str,
+    db: &std::path::Path,
+    out: &std::path::Path,
+) -> Result<PathBuf> {
     let text = format!(
         r#"interval_sec = 5
 pages_per_url = 1
@@ -245,7 +250,11 @@ fn end_to_end_monitor_runs_against_mock() -> Result<()> {
     run_once(&bin, &config, true)?;
 
     // 1) Действительно ходили в мок (каталог + карточки)
-    assert!(mock.hits() >= 2, "expected >=2 mock hits, got {}", mock.hits());
+    assert!(
+        mock.hits() >= 2,
+        "expected >=2 mock hits, got {}",
+        mock.hits()
+    );
 
     // 2) CSV создан и содержит ровно 2 прошедшие фильтры объявления
     let csv = out.join("avito.csv");
@@ -254,12 +263,18 @@ fn end_to_end_monitor_runs_against_mock() -> Result<()> {
     assert_eq!(lines.len(), 3, "header + 2 rows: {contents}");
     assert!(contents.contains("iPhone 13"), "{contents}");
     assert!(contents.contains("Samsung A54"), "{contents}");
-    assert!(!contents.contains("Сломанный"), "reserved+black должно быть отфильтровано");
+    assert!(
+        !contents.contains("Сломанный"),
+        "reserved+black должно быть отфильтровано"
+    );
     // 3) Просмотры из карточек проставлены (enrichment)
     assert!(contents.contains("4321"), "views total missing: {contents}");
     assert!(contents.contains("12"), "views today missing: {contents}");
     // 4) Полное описание из карточки заменяет короткое
-    assert!(contents.contains("Полное описание объявления"), "{contents}");
+    assert!(
+        contents.contains("Полное описание объявления"),
+        "{contents}"
+    );
     // 5) Цены/адреса на месте
     assert!(contents.contains("49999"), "{contents}");
     assert!(contents.contains("Краснодар"), "{contents}");
@@ -267,7 +282,9 @@ fn end_to_end_monitor_runs_against_mock() -> Result<()> {
     // 6) БД содержит оба объявления (mark_seen отработал)
     let conn = rusqlite::Connection::open(&db)?;
     let seen: i64 = conn
-        .query_row("SELECT COUNT(*) FROM seen WHERE price > 0", [], |r| r.get(0))
+        .query_row("SELECT COUNT(*) FROM seen WHERE price > 0", [], |r| {
+            r.get(0)
+        })
         .context("seen count")?;
     assert_eq!(seen, 2, "expected 2 dedup rows");
     let ids: Vec<String> = conn
@@ -281,7 +298,11 @@ fn end_to_end_monitor_runs_against_mock() -> Result<()> {
     run_once(&bin, &config, false)?;
     let contents2 = std::fs::read_to_string(&csv)?;
     let lines2: Vec<&str> = contents2.lines().collect();
-    assert_eq!(lines2.len(), 3, "dedup должен был отсечь повтор: {contents2}");
+    assert_eq!(
+        lines2.len(),
+        3,
+        "dedup должен был отсечь повтор: {contents2}"
+    );
 
     Ok(())
 }

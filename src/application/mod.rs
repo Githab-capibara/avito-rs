@@ -97,8 +97,17 @@ impl Monitor {
 
             tasks.push(tokio::spawn(async move {
                 let _permit = permit.acquire().await;
-                process_url(cfg, fetcher, store, exporter, metrics, notify, extractor_kind, source)
-                    .await
+                process_url(
+                    cfg,
+                    fetcher,
+                    store,
+                    exporter,
+                    metrics,
+                    notify,
+                    extractor_kind,
+                    source,
+                )
+                .await
             }));
         }
 

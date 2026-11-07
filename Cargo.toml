@@ -5,7 +5,12 @@ edition = "2021"
 rust-version = "1.98"
 description = "Rust port of Duff89/parser_avito: Avito listing monitor with filters, dedup, price tracking, Telegram/VK notifications, CSV/XLSX export"
 license = "MIT"
-repository = "https://github.com/Duff89/parser_avito"
+repository = "https://github.com/Githab-capibara/avito-rs"
+homepage = "https://github.com/Githab-capibara/avito-rs"
+readme = "README.md"
+keywords = ["avito", "scraper", "monitor", "telegram", "async"]
+categories = ["command-line-utilities", "web-programming", "asynchronous"]
+exclude = ["target/", "logs/", "out/", "*.db"]
 
 [dependencies]
 tokio = { version = "1", features = [

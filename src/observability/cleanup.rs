@@ -23,9 +23,7 @@ fn is_log_file(path: &Path) -> bool {
 fn age_secs(path: &Path) -> Option<u64> {
     let md = std::fs::metadata(path).ok()?;
     let modified = md.modified().ok()?;
-    let age = std::time::SystemTime::now()
-        .duration_since(modified)
-        .ok()?;
+    let age = std::time::SystemTime::now().duration_since(modified).ok()?;
     Some(age.as_secs())
 }
 
