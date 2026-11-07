@@ -1,0 +1,8 @@
+/target
+Cargo.lock
+*.db
+*.db-wal
+*.db-shm
+/logs
+/out
+/storage/own_cookies.json

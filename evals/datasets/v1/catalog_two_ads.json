@@ -1,0 +1,72 @@
+{
+  "items": [
+    {
+      "description": "Отличное состояние, полный комплект.",
+      "geo": {
+        "coordinates": {
+          "latitude": 45.0,
+          "longitude": 39.0
+        },
+        "formattedAddress": "Краснодар, ул. Красная"
+      },
+      "id": "4040404040",
+      "images": [
+        {
+          "140x105": "https://img.test/x.jpg",
+          "636x480": "https://img.test/x.jpg"
+        }
+      ],
+      "isReserved": false,
+      "iva": null,
+      "normalizedPrice": "85000 ₽",
+      "priceDetailed": {
+        "currency": "RUB",
+        "value": 85000
+      },
+      "seller": {
+        "formattedAddress": "Краснодар, ул. Красная",
+        "sellerId": "shop_target"
+      },
+      "sortTimeStamp": 1730000000000,
+      "title": "Apple iPhone 16 Pro 999",
+      "todayViews": 3,
+      "totalViews": 12,
+      "urlPath": "/telefony/apple_iphone_16_pro_999"
+    },
+    {
+      "description": "Новый, гарантия.",
+      "geo": {
+        "coordinates": {
+          "latitude": 45.0,
+          "longitude": 39.0
+        },
+        "formattedAddress": "Москва"
+      },
+      "id": "5050505050",
+      "images": [
+        {
+          "140x105": "https://img.test/x.jpg",
+          "636x480": "https://img.test/x.jpg"
+        }
+      ],
+      "isReserved": true,
+      "iva": {
+        "businessUserId": 4242
+      },
+      "normalizedPrice": "49999 ₽",
+      "priceDetailed": {
+        "currency": "RUB",
+        "value": 49999
+      },
+      "seller": {
+        "formattedAddress": "Москва",
+        "sellerId": "shop_other"
+      },
+      "sortTimeStamp": 1730000000000,
+      "title": "Samsung Galaxy S25 Ultra",
+      "todayViews": 3,
+      "totalViews": 12,
+      "urlPath": "/telefony/samsung_galaxy_s25_ultra"
+    }
+  ]
+}
