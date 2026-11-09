@@ -49,26 +49,31 @@ fn html_unescape(raw: &str) -> String {
         return raw.to_owned();
     }
     let mut out = String::with_capacity(raw.len());
-    let bytes = raw.as_bytes();
-    let mut i = 0usize;
-    while i < bytes.len() {
-        if bytes[i] != b'&' {
-            // копируем исходный символ (utf-8 безопасно: сурогаты не встречаются)
-            out.push(bytes[i] as char);
-            i += 1;
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c != '&' {
+            out.push(c);
             continue;
         }
-        let rest = &raw[i..];
-        let semi = match rest.find(';') {
-            Some(s) if s <= 10 => s,
-            _ => {
-                out.push('&');
-                i += 1;
-                continue;
+        // Look ahead for ';' within 10 chars without consuming the real iterator.
+        let mut lookahead = chars.clone();
+        let mut entity = String::new();
+        let mut found_semi = false;
+        for _ in 0..10 {
+            match lookahead.next() {
+                Some(';') => {
+                    found_semi = true;
+                    break;
+                }
+                Some(ch) => entity.push(ch),
+                None => break,
             }
-        };
-        let entity = &rest[1..semi];
-        let decoded = match entity {
+        }
+        if !found_semi {
+            out.push('&');
+            continue;
+        }
+        let decoded = match entity.as_str() {
             "amp" => Some('&'),
             "lt" => Some('<'),
             "gt" => Some('>'),
@@ -88,12 +93,12 @@ fn html_unescape(raw: &str) -> String {
         match decoded {
             Some(c) => {
                 out.push(c);
-                i += semi + 1;
+                for _ in 0..entity.len() {
+                    chars.next();
+                }
+                chars.next(); // consume ';'
             }
-            None => {
-                out.push('&');
-                i += 1;
-            }
+            None => out.push('&'),
         }
     }
     out
