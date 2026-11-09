@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, USER_AGENT};
+use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, COOKIE, USER_AGENT};
 use reqwest::{Client, Proxy};
 
 use super::backoff::{Backoff, TokenBucket};
@@ -52,7 +52,7 @@ fn headers() -> HeaderMap {
 
 /// Клиент Авито за трейтом [`PageFetcher`].
 pub struct AvitoClient {
-    http: Client,
+    http: Arc<std::sync::Mutex<Client>>,
     cfg: Arc<AppConfig>,
     bucket: Arc<TokenBucket>,
     backoff: Backoff,
@@ -60,6 +60,7 @@ pub struct AvitoClient {
     proxies: Vec<String>,
     proxy_idx: AtomicUsize,
     cookies_path: Mutex<Option<PathBuf>>,
+    own_cookies: Mutex<Option<String>>,
 }
 
 impl std::fmt::Debug for AvitoClient {
@@ -88,7 +89,9 @@ impl AvitoClient {
         }
 
         Ok(Self {
-            http: builder.build().context("failed to build reqwest client")?,
+            http: Arc::new(std::sync::Mutex::new(
+                builder.build().context("failed to build reqwest client")?,
+            )),
             bucket: Arc::new(TokenBucket::per_minute(cfg.req_per_min)),
             backoff: Backoff::default(),
             redactor,
@@ -99,6 +102,7 @@ impl AvitoClient {
             } else {
                 None
             }),
+            own_cookies: Mutex::new(None),
             cfg,
         })
     }
@@ -120,9 +124,21 @@ impl AvitoClient {
             .with_context(|| format!("read cookies: {}", path.display()))?;
         let value: serde_json::Value = serde_json::from_str(&raw).context("parse cookies json")?;
         let mut loaded = 0usize;
+        let mut header = String::new();
         if let Some(cookies) = value.get("cookies").and_then(|c| c.as_object()) {
             loaded = cookies.len();
+            for (name, val) in cookies {
+                if let Some(v) = val.as_str() {
+                    if !header.is_empty() {
+                        header.push_str("; ");
+                    }
+                    header.push_str(name);
+                    header.push('=');
+                    header.push_str(v);
+                }
+            }
         }
+        *self.own_cookies.lock().unwrap_or_else(|p| p.into_inner()) = Some(header);
         tracing::info!(
             "loaded {loaded} own cookies from {}",
             self.redactor.redact(&path.display().to_string())
@@ -139,7 +155,19 @@ impl AvitoClient {
         for attempt in 1..=max_retries {
             self.bucket.acquire().await;
 
-            let response = match self.http.get(url).send().await {
+            let client = {
+                let guard = self.http.lock().unwrap_or_else(|e| e.into_inner());
+                (*guard).clone()
+            };
+            let mut request = client.get(url);
+            if let Ok(guard) = self.own_cookies.lock() {
+                if let Some(cookie) = guard.as_deref() {
+                    if !cookie.is_empty() {
+                        request = request.header(COOKIE, cookie);
+                    }
+                }
+            }
+            let response = match request.send().await {
                 Ok(r) => r,
                 Err(err) => {
                     bad_in_a_row += 1;
@@ -202,12 +230,28 @@ impl AvitoClient {
     }
 
     /// Переключить прокси на следующий в списке (порт `handle_block` мобильного прокси).
+    /// Пересоздаёт HTTP-клиент с новым прокси.
     fn rotate_proxy(&self) {
         if self.proxies.len() < 2 {
             return;
         }
         let next = (self.proxy_idx.load(Ordering::Relaxed) + 1) % self.proxies.len();
         self.proxy_idx.store(next, Ordering::Relaxed);
+        let mut builder = Client::builder()
+            .timeout(Duration::from_secs(self.cfg.timeout_sec))
+            .connect_timeout(Duration::from_secs(self.cfg.timeout_sec.min(15)))
+            .cookie_store(true)
+            .gzip(true)
+            .default_headers(headers());
+        if let Some(p) = self.proxies.get(next) {
+            if let Ok(proxy) = Proxy::all(p) {
+                builder = builder.proxy(proxy);
+            }
+        }
+        if let Ok(new_client) = builder.build() {
+            let mut guard = self.http.lock().unwrap_or_else(|e| e.into_inner());
+            *guard = new_client;
+        }
         tracing::info!(
             "proxy rotated to #{} ({})",
             next,
@@ -224,7 +268,14 @@ impl AvitoClient {
     /// Страница каталога (список объявлений) — основной путь монитора.
     pub async fn fetch_catalog(&self, source_url: &str, page: u32) -> Result<FetchedPage> {
         let url = match self.cfg.fetch_mode {
-            FetchMode::SpfaUrl => convert_url(source_url, page, &self.cfg, &self.redactor)?,
+            FetchMode::SpfaUrl => {
+                let source_url = source_url.to_owned();
+                let cfg = Arc::clone(&self.cfg);
+                let redactor = Arc::clone(&self.redactor);
+                tokio::task::spawn_blocking(move || convert_url(&source_url, page, &cfg, &redactor))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("url-converter task: {e}"))??
+            }
             FetchMode::DirectHtml => paginate_url(source_url, page),
             FetchMode::MobileApi => mobile_catalog_url(&self.cfg, source_url, page),
         };
