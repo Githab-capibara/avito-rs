@@ -232,23 +232,8 @@ impl Extractor for V1JsonExtractor {
         let items_node = super::find_items_node(payload).ok_or_else(|| ExtractError::NoItems {
             origin: page.url.clone(),
         })?;
-
-        let parsed: ItemsResponse = serde_json::from_value(items_node.clone())
-            .map_err(|e| ExtractError::MalformedJson(e.to_string()))?;
-
-        let out: Vec<Listing> = parsed
-            .items
-            .into_iter()
-            .filter(Self::is_valid)
-            .filter_map(|item| match Self::to_listing(item) {
-                Some(l) => Some(l),
-                None => {
-                    tracing::debug!("dropped malformed listing during extraction");
-                    None
-                }
-            })
-            .collect();
-        Ok(out)
+        self.extract_items(items_node)
+            .map_err(ExtractError::MalformedJson)
     }
 }
 
