@@ -243,6 +243,7 @@ async fn monitor_main(cfg: AppConfig, config_path: std::path::PathBuf) -> Result
     let store = Arc::new(SqliteStore::open(&cfg.db_path)?);
     let exporter: Arc<dyn exporters::ResultExporter> = build_exporter(&cfg)?;
     let fetcher = Arc::new(AvitoClient::new(Arc::clone(&cfg), Arc::clone(&redactor))?);
+    fetcher.load_cookies().await?;
 
     tracing::info!(
         config = %redactor.redact(&config_path.display().to_string()),
