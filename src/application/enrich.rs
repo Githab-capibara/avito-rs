@@ -10,9 +10,11 @@
 //! Пауза `random.uniform(0.1, 0.9)` между карточками — джиттер, чтобы не
 //! ловить rate-limit.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use tokio::sync::Semaphore;
 
 use crate::dto::Listing;
 use crate::providers::avito::AvitoClient;
@@ -93,55 +95,64 @@ fn count(value: Option<&serde_json::Value>) -> Option<u64> {
     None
 }
 
-/// Порт `_enrich_ads`: обойти список, скачать карточки, заполнить поля.
+/// Порт `_enrich_ads`: обойти список, скачать карточки параллельно, заполнить поля.
 ///
-/// Флаги `views`/`description` управляют тем, что именно писать;
-/// в оригинале при `parse_views=true` описание тоже подтягивается,
-/// а `parse_description` работает только когда `parse_views` выключен.
+/// `concurrency` ограничивает число одновременных запросов к карточкам.
 pub async fn enrich(
-    client: &AvitoClient,
+    client: &Arc<AvitoClient>,
     ads: &mut [Listing],
     views: bool,
-    description: bool,
+    _description: bool,
+    concurrency: usize,
 ) -> Result<usize> {
-    let total = ads.len();
+    if ads.is_empty() {
+        return Ok(0);
+    }
+    let concurrency = concurrency.max(1);
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+
+    let work: Vec<(usize, u64)> = ads
+        .iter()
+        .enumerate()
+        .filter_map(|(index, ad)| ad.id.parse::<u64>().ok().map(|id| (index, id)))
+        .collect();
+
+    let mut handles = Vec::with_capacity(work.len());
+    for (index, id) in work {
+        let client = Arc::clone(client);
+        let sem = Arc::clone(&semaphore);
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await;
+            let page = match client.fetch_item(&id.to_string()).await {
+                Ok(p) => p,
+                Err(err) => {
+                    tracing::warn!("card request failed for id {id}: {err}");
+                    return None;
+                }
+            };
+            let Some(payload) = page.body.as_ref() else {
+                tracing::warn!("card payload for id {id} is not JSON");
+                return None;
+            };
+            let (description, total_views, today_views) = extract_item_details(payload);
+            let mut jitter = Jitter::default();
+            tokio::time::sleep(Duration::from_secs_f64(jitter.next())).await;
+            Some((index, description, total_views, today_views))
+        }));
+    }
+
     let mut enriched = 0usize;
-    let mut rng = Jitter::default();
-    for (index, ad) in ads.iter_mut().enumerate() {
-        let id = match ad.id.parse::<u64>() {
-            Ok(n) => n,
-            Err(_) => {
-                tracing::warn!("skipping listing without numeric id: {}", ad.id);
-                continue;
+    for handle in handles {
+        if let Ok(Some((index, description, total_views, today_views))) = handle.await {
+            if views {
+                ads[index].total_views = total_views;
+                ads[index].today_views = today_views;
             }
-        };
-        let page = match client.fetch_item(&id.to_string()).await {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::warn!("card request failed for id {id}: {err}");
-                continue;
+            if let Some(text) = description {
+                ads[index].description = Some(text);
             }
-        };
-        let Some(payload) = page.body.as_ref() else {
-            tracing::warn!("card payload for id {id} is not JSON");
-            continue;
-        };
-        let (full_description, total_views, today_views) = extract_item_details(payload);
-        if views {
-            ad.total_views = total_views;
-            ad.today_views = today_views;
-            tracing::debug!(
-                "id {id} ({}/{total}) views total={total_views:?} today={today_views:?}",
-                index + 1,
-            );
+            enriched += 1;
         }
-        if description {
-            if let Some(text) = full_description {
-                ad.description = Some(text);
-            }
-        }
-        enriched += 1;
-        tokio::time::sleep(Duration::from_secs_f64(rng.next())).await;
     }
     Ok(enriched)
 }
@@ -173,30 +184,32 @@ impl Jitter {
 
 /// Порт `parse_views`: включено в конфиге + тянет описание.
 pub async fn parse_views(
-    client: &AvitoClient,
+    client: &Arc<AvitoClient>,
     ads: &mut [Listing],
     parse_views: bool,
     parse_description: bool,
+    concurrency: usize,
 ) -> Result<usize> {
     if !parse_views {
         return Ok(0);
     }
     tracing::info!("parsing views for {} listings", ads.len());
-    enrich(client, ads, true, parse_description).await
+    enrich(client, ads, true, parse_description, concurrency).await
 }
 
 /// Порт `parse_description`: только когда `parse_views` выключен.
 pub async fn parse_description(
-    client: &AvitoClient,
+    client: &Arc<AvitoClient>,
     ads: &mut [Listing],
     parse_views: bool,
     parse_description: bool,
+    concurrency: usize,
 ) -> Result<usize> {
     if !parse_description || parse_views {
         return Ok(0);
     }
     tracing::info!("parsing full description for {} listings", ads.len());
-    enrich(client, ads, false, true).await
+    enrich(client, ads, false, true, concurrency).await
 }
 
 #[cfg(test)]

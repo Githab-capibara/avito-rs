@@ -542,7 +542,7 @@ impl Default for AppConfig {
             own_cookies_path: default_cookies_path(),
             db_path: default_db_path(),
             urls: Vec::new(),
-            filters: FilterCfg::default(),
+            filters: FilterCfg::allow_all(),
             notifications: NotificationsCfg::default(),
             proxy: ProxyCfg::default(),
             cookie_service: CookieServiceCfg::default(),

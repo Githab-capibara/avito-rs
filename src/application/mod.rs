@@ -8,7 +8,7 @@
 pub mod enrich;
 pub mod filters;
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -34,19 +34,19 @@ pub struct CycleReport {
 
 /// Монитор: владеет клиентом, хранилищем, метриками.
 pub struct Monitor {
-    cfg: Arc<AppConfig>,
     fetcher: Arc<AvitoClient>,
     store: Arc<SqliteStore>,
     exporter: Arc<dyn ResultExporter>,
     metrics: Arc<Metrics>,
     extractor_kind: ExtractorKind,
+    cfg: Arc<RwLock<AppConfig>>,
 }
 
 impl std::fmt::Debug for Monitor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Monitor")
             .field("extractor", &self.extractor_kind)
-            .field("urls", &self.cfg.urls.len())
+            .field("urls", &self.cfg.read().map(|c| c.urls.len()).unwrap_or(0))
             .finish_non_exhaustive()
     }
 }
@@ -65,7 +65,7 @@ impl Monitor {
             ExtractorKind::V1Json
         });
         Self {
-            cfg,
+            cfg: Arc::new(RwLock::new((*cfg).clone())),
             fetcher,
             store,
             exporter,
@@ -80,15 +80,23 @@ impl Monitor {
         F: Fn(&Notification) + Send + Sync + 'static,
     {
         let extractor_kind = self.extractor_kind;
-        let semaphore = Arc::new(tokio::sync::Semaphore::new(self.cfg.max_concurrent.max(1)));
+        // Читаем конфиг свежий на каждый цикл — позволяет горячему обновлению
+        // через разделяемый RwLock (PUT /urls в API, если монитор и API в одном процессе).
+        let cfg = Arc::new(
+            self.cfg
+                .read()
+                .map(|g| g.clone())
+                .unwrap_or_else(|e| e.into_inner().clone()),
+        );
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrent.max(1)));
         let notify = Arc::new(notify);
         let mut report = CycleReport::default();
 
-        let mut tasks = Vec::with_capacity(self.cfg.urls.len());
-        for url in &self.cfg.urls {
+        let mut tasks = Vec::with_capacity(cfg.urls.len());
+        for url in &cfg.urls {
             let source = url.value.clone();
             let permit = Arc::clone(&semaphore);
-            let cfg = Arc::clone(&self.cfg);
+            let cfg = Arc::clone(&cfg);
             let fetcher = Arc::clone(&self.fetcher);
             let store = Arc::clone(&self.store);
             let exporter = Arc::clone(&self.exporter);
@@ -134,6 +142,11 @@ impl Monitor {
                 tracing::info!("shutdown flag set — monitor stops");
                 return;
             }
+            let cfg = self
+                .cfg
+                .read()
+                .map(|c| c.clone())
+                .unwrap_or_else(|e| e.into_inner().clone());
             let n = Arc::clone(&notify);
             let report = self.run_once(move |x| n(x)).await;
             tracing::info!(
@@ -142,12 +155,12 @@ impl Monitor {
                 report.new_ads,
                 report.errors
             );
-            if self.cfg.one_shot {
+            if cfg.one_shot {
                 tracing::info!("one_shot enabled — monitor stops after first cycle");
                 return;
             }
             tokio::select! {
-                _ = tokio::time::sleep(Duration::from_secs(self.cfg.interval_sec)) => {}
+                _ = tokio::time::sleep(Duration::from_secs(cfg.interval_sec)) => {}
                 _ = shutdown.changed() => { tracing::info!("shutdown during idle"); return; }
             }
         }
@@ -206,19 +219,23 @@ where
         tracing::debug!("{} listings after filters", filtered.len());
 
         let mut fresh: Vec<Listing> = Vec::new();
-        for listing in filtered {
-            if cfg.filters.skip_seen {
-                match store.is_seen(&listing) {
-                    Ok(true) => continue,
-                    Ok(false) => {}
-                    Err(e) => {
-                        tracing::warn!("is_seen failed: {e}");
-                        report.errors += 1;
-                        continue;
-                    }
+        if cfg.filters.skip_seen {
+            let seen_flags = match store.is_seen_batch(&filtered) {
+                Ok(f) => f,
+                Err(e) => {
+                    tracing::warn!("is_seen_batch failed: {e}");
+                    report.errors += 1;
+                    vec![false; filtered.len()]
                 }
+            };
+            for (listing, seen) in filtered.into_iter().zip(seen_flags) {
+                if seen {
+                    continue;
+                }
+                fresh.push(listing);
             }
-            fresh.push(listing);
+        } else {
+            fresh = filtered;
         }
 
         if fresh.is_empty() {
@@ -233,12 +250,13 @@ where
             notify(&note);
         }
         report.new_ads += u64::try_from(note_count).unwrap_or(0);
-        // Обогащение после уведомлений, до сохранения (как в оригинале).
+        let concurrency = cfg.max_concurrent.max(1);
         let _ = crate::application::enrich::parse_views(
             &fetcher,
             &mut fresh,
             cfg.parse_views,
             cfg.parse_description,
+            concurrency,
         )
         .await;
         let _ = crate::application::enrich::parse_description(
@@ -246,6 +264,7 @@ where
             &mut fresh,
             cfg.parse_views,
             cfg.parse_description,
+            concurrency,
         )
         .await;
 
@@ -253,25 +272,31 @@ where
             tracing::warn!("export failed: {e}");
             report.errors += 1;
         }
+        if let Err(e) = store.mark_seen_batch(&fresh) {
+            tracing::warn!("mark_seen_batch failed: {e}");
+            report.errors += 1;
+        }
+        // Отслеживание цены: фиксируем текущую цену для spätere оценки снижения.
         for ad in &fresh {
-            if let Err(e) = store.mark_seen(ad) {
-                tracing::warn!("mark_seen failed for {}: {e}", ad.id);
-                report.errors += 1;
+            if let Some(price) = ad.price {
+                if let Err(e) = store.set_price(&ad.id, price) {
+                    tracing::warn!("set_price failed for {}: {e}", ad.id);
+                    report.errors += 1;
+                }
             }
         }
-        advisory_sleep(cfg.pause_between_links_sec);
+        advisory_sleep(cfg.pause_between_links_sec).await;
     }
 
     report
 }
 
-/// Короткая пауза между страницами: в async-контексте без блокировки рантайма
-/// на длинные значения (основной `pause` задаётся `interval_sec`).
-fn advisory_sleep(secs: u64) {
+/// Короткая пауза между страницами без блокировки event loop.
+async fn advisory_sleep(secs: u64) {
     if secs == 0 {
         return;
     }
-    std::thread::sleep(Duration::from_millis(secs.min(2_000)));
+    tokio::time::sleep(Duration::from_millis(secs.min(2_000))).await;
 }
 
 /// Слить отчёт воркера в общий.
