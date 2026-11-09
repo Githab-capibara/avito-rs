@@ -5,9 +5,8 @@
 
 pub mod cleanup;
 
-use std::sync::atomic::{AtomicU64, Ordering};
-
 use crate::dto::ObservabilityCfg;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Счётчики процесса (атомики вместо крейта metrics).
 #[derive(Debug, Default)]

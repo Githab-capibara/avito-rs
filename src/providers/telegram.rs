@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use tokio::sync::Mutex;
 
 use super::backoff::Backoff;
 use crate::dto::{AppConfig, Notification};
@@ -25,10 +24,7 @@ pub struct TelegramNotifier {
     /// Отправлять без `parse_mode` (HTML ломается на длинных описаниях).
     #[allow(dead_code)]
     only_text: bool,
-    #[allow(dead_code)]
-    proxy: Option<String>,
     redactor: Arc<Redactor>,
-    lock: Mutex<()>,
 }
 
 impl TelegramNotifier {
@@ -58,9 +54,7 @@ impl TelegramNotifier {
             token: token.to_owned(),
             chat_ids: cfg.notifications.telegram_chat_ids.clone(),
             only_text: cfg.notifications.telegram_only_text,
-            proxy: cfg.notifications.telegram_proxy.clone(),
             redactor,
-            lock: Mutex::new(()),
         }))
     }
 
@@ -197,7 +191,6 @@ impl TelegramNotifier {
 
     /// Отправить сообщение в один чат.
     pub async fn send(&self, chat_id: i64, text: &str) -> Result<()> {
-        let _g = self.lock.lock().await;
         let url = format!("{API_BASE}/bot{}/sendMessage", self.token);
         let body = serde_json::json!({
             "chat_id": chat_id,
