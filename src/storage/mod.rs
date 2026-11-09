@@ -123,6 +123,24 @@ impl SqliteStore {
         Ok(n > 0)
     }
 
+    /// Пакетная проверка `is_seen` за один проход по списку.
+    pub fn is_seen_batch(&self, listings: &[Listing]) -> Result<Vec<bool>> {
+        let conn = self.lock();
+        let mut out = Vec::with_capacity(listings.len());
+        for listing in listings {
+            let price = listing.price.unwrap_or(0).to_string();
+            let n: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM seen WHERE id = ?1 AND price = ?2",
+                    rusqlite::params![listing.id, price],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            out.push(n > 0);
+        }
+        Ok(out)
+    }
+
     /// Пометить объявление просмотренным.
     pub fn mark_seen(&self, listing: &Listing) -> Result<()> {
         let price = listing.price.unwrap_or(0);
@@ -132,6 +150,22 @@ impl SqliteStore {
                 rusqlite::params![listing.id, price, listing.url(), now_ts()],
             )
             .context("insert seen")?;
+        Ok(())
+    }
+
+    /// Пакетно пометить объявления просмотренными в одной транзакции.
+    pub fn mark_seen_batch(&self, listings: &[Listing]) -> Result<()> {
+        let mut conn = self.lock();
+        let tx = conn.transaction().context("begin mark_seen_batch")?;
+        for listing in listings {
+            let price = listing.price.unwrap_or(0);
+            tx.execute(
+                "INSERT OR IGNORE INTO seen (id, price, url, first_seen) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![listing.id, price, listing.url(), now_ts()],
+            )
+            .context("insert seen batch")?;
+        }
+        tx.commit().context("commit mark_seen_batch")?;
         Ok(())
     }
 
