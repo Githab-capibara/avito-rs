@@ -18,7 +18,7 @@
 | `timeout_sec` | u64 | 30 | HTTP-таймаут |
 | `pages_per_url` | usize | 1 | Страниц на URL (включая 1-ю) |
 | `pause_between_links_sec` | u64 | 0 | Пауза между URL |
-| `block_threshold` | usize | 3 | Сколько блокировок подряд до «прогрева» |
+| `block_threshold` | usize | 3 | Сколько блокировок подряд до ротации прокси |
 | `max_retries` | u32 | 3 | Повторов на запрос |
 | `retry_delay_sec` | u64 | 2 | Базовая задержка перед повтором |
 | `one_shot` | bool | false | Один проход и выход |
@@ -27,6 +27,22 @@
 | `use_own_cookies` | bool | false | Читать cookies из файла |
 | `own_cookies_path` | string | `storage/own_cookies.json` | Где лежат cookies |
 | `db_path` | string | `database.db` | SQLite |
+
+> `max_concurrent` ограничивает не только параллельную обработку URL в цикле,
+> но и число одновременных запросов к карточкам при обогащении
+> (`parse_views` / `parse_description`).
+>
+> В режиме `fetch_mode = "spfa_url"` конвертер URL запускается через
+> `tokio::task::spawn_blocking`, поэтому не блокирует event loop даже при
+> медленном ответе конвертера.
+>
+> При `format = "xlsx"` дополнительно пишется JSON-сайдкар
+> (`<file>.json`) с уже записанными строками — без него append в `.xlsx`
+> невозможен (нет zip-инфляции без крейта), и старые строки терялись бы.
+>
+> Конфиг монитора хранится за `Arc<RwLock<AppConfig>>` и перечитывается в
+> начале каждого цикла, поэтому `PUT /urls` через REST API сразу
+> подхватывается монитором (если API и монитор в одном процессе).
 
 ## `[filters]`
 
@@ -125,3 +141,23 @@ log_max_files = 20
 
 Переменных нет: `load_config` читает только TOML. Секреты (TG/VK token,
 `api_key`) Redactor вырезает из логов.
+
+## Проверка качества
+
+```bash
+cargo build        # сборка
+cargo test         # все тесты (включая e2e против мока Авито)
+cargo clippy       # линтер (должен быть чист)
+cargo fmt --check  # форматирование
+```
+
+## Известные ограничения (будут исправлены отдельно)
+
+- `Listing::url()` fallback, если в объявлении нет `urlPath`, составляет
+  `https://www.avito.ru/{id}` — такая страница на Авито не существует;
+  экстрактор всегда заполняет `urlPath`, поэтому fallback не применяется.
+- `tests/datasets.rs` читает сгенерированные файлы
+  `evals/datasets/v1/*.json` — они создаются игнорируемым тестом
+  `gen_datasets` (`cargo test --test gen_datasets -- --ignored`).
+- API-ключ сравнивается не константное время (допустимо для данного класса
+  приложения).
