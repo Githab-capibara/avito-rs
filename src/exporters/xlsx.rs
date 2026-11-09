@@ -139,9 +139,13 @@ impl XlsxExporter {
     pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
         Self { path: path.into() }
     }
-    /// Создать книгу с шапкой, если файла ещё нет.
+    /// Путь к JSON-сайдкару с уже записанными строками.
+    fn sidecar_path(&self) -> std::path::PathBuf {
+        self.path.with_extension("json")
+    }
+    /// Создать книгу с шапкой, если файла ещё нет, и пустой сайдкар со строками.
     fn ensure_file(&self) -> Result<()> {
-        if self.path.exists() {
+        if self.path.exists() && self.sidecar_path().exists() {
             return Ok(());
         }
         if let Some(parent) = self.path.parent() {
@@ -158,16 +162,29 @@ impl XlsxExporter {
             sheet.write_string(0, col as u16, head, &format)?;
         }
         workbook.close().map_err(xlsx_err)?;
+        let sidecar = self.sidecar_path();
+        if !sidecar.exists() {
+            std::fs::write(&sidecar, "[]")
+                .with_context(|| format!("write sidecar {}", sidecar.display()))?;
+        }
         Ok(())
     }
-    /// Дописать строки (пересоздание книги: `rust_xlsxwriter` не умеет append).
+    /// Дописать строки: старые читаются из JSON-сайдкара (xlsx-запись нечитаема без zip-крейта),
+    /// книга пересобирается из старых + новых строк, сайдкар обновляется.
     fn append_rows(&self, ads: &[Listing]) -> Result<()> {
-        if self.path.exists() {
-            let old: Vec<Vec<String>> = read_all_rows(&self.path)?;
-            self.rewrite_with(old, ads)?;
-        } else {
-            self.rewrite_with(Vec::new(), ads)?;
-        }
+        let sidecar = self.sidecar_path();
+        let old: Vec<Vec<String>> = match std::fs::read_to_string(&sidecar) {
+            Ok(t) => serde_json::from_str(&t)
+                .context("parse xlsx sidecar")
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        };
+        let new_rows: Vec<Vec<String>> = ads.iter().map(row_cells).collect();
+        self.rewrite_with(old.clone(), ads)?;
+        let mut all = old;
+        all.extend(new_rows);
+        std::fs::write(&sidecar, serde_json::to_string(&all)?)
+            .with_context(|| format!("write sidecar {}", sidecar.display()))?;
         Ok(())
     }
     /// Пересобрать книгу целиком (шапка + старые строки + новые).
@@ -207,85 +224,6 @@ impl XlsxExporter {
 /// Ошибка rust_xlsxwriter → anyhow.
 fn xlsx_err(e: XlsxError) -> anyhow::Error {
     anyhow::anyhow!("xlsx: {e}")
-}
-
-/// Прочитать все строки существующей книги (best-effort: zip+xml вручную).
-fn read_all_rows(path: &std::path::Path) -> Result<Vec<Vec<String>>> {
-    // Минимальный парсер: смотрим <row><c ...><v>text</v></c></row>
-    let bytes = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
-    let text = String::from_utf8_lossy(&bytes);
-    let xml = unzip_first_sheet(&text).unwrap_or_default();
-    Ok(parse_rows(&xml))
-}
-
-/// Достать XML первого листа из архива (zip вручную: local header + deflate-stored).
-/// `rust_xlsxwriter` пишет сжатыми потоками, поэтому в pure-Rust без крейта
-/// inflate недоступен — возвращаем `None`, и книга пересобирается без старых строк.
-fn unzip_first_sheet(raw: &str) -> Option<String> {
-    if raw.contains("xl/worksheets/sheet1.xml") {
-        // если файл уже распакован (для тестов)
-        return Some(raw.to_owned());
-    }
-    None
-}
-
-/// Разобрать `<row>...</row>` в вектор строк.
-fn parse_rows(xml: &str) -> Vec<Vec<String>> {
-    let mut rows = Vec::new();
-    let mut rest = xml;
-    while let Some(start) = rest.find("<row") {
-        let Some(open_end) = rest[start..].find('>').map(|i| i + start) else {
-            break;
-        };
-        let Some(close) = rest[open_end..].find("</row>").map(|i| i + open_end) else {
-            break;
-        };
-        let body = &rest[(open_end + 1)..close];
-        rows.push(parse_cells(body));
-        let next = close + 6;
-        if next >= rest.len() {
-            break;
-        }
-        rest = &rest[next..];
-    }
-    rows
-}
-
-/// Разобрать `<c ...>...</c>` внутри строки.
-fn parse_cells(body: &str) -> Vec<String> {
-    let mut cells = Vec::new();
-    let mut c = body;
-    while let Some(cs) = c.find("<c") {
-        let Some(ce) = c[cs..].find('>').map(|i| i + cs) else {
-            break;
-        };
-        let Some(cc) = c[ce..].find("</c>").map(|i| i + ce) else {
-            break;
-        };
-        let inner = &c[(ce + 1)..cc];
-        cells.push(cell_text(inner));
-        let next = cc + 4;
-        if next >= c.len() {
-            break;
-        }
-        c = &c[next..];
-    }
-    cells
-}
-
-/// Достать текст ячейки: `<v>` (число/общая строка) или `<is><t>` (inline).
-fn cell_text(inner: &str) -> String {
-    if let Some(vs) = inner.find("<v>") {
-        if let Some(ve) = inner[vs..].find("</v>").map(|i| i + vs) {
-            return inner[(vs + 3)..ve].to_owned();
-        }
-    }
-    if let Some(ts) = inner.find("<is><t>") {
-        if let Some(te) = inner[ts..].find("</t>").map(|i| i + ts) {
-            return inner[(ts + 8)..te].to_owned();
-        }
-    }
-    String::new()
 }
 
 /// Строка объявления в 14 колонок оригинала.
