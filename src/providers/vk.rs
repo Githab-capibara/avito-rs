@@ -101,7 +101,15 @@ impl VkNotifier {
     /// Отправить сообщение в один peer.
     async fn send_to_peer(&self, peer: i64, n: &Notification) -> Result<()> {
         let attachment = match &n.image_url {
-            Some(url) => self.upload_photo(url).await?,
+            Some(url) => match self.upload_photo(url).await {
+                Ok(a) => a,
+                Err(e) => {
+                    tracing::warn!(
+                        "vk photo upload failed for peer {peer}, sending text-only: {e}"
+                    );
+                    None
+                }
+            },
             None => None,
         };
         let mut params: Vec<(&str, String)> = vec![
