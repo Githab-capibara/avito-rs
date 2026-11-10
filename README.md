@@ -65,11 +65,10 @@ TOML
 ```
 
 ## Ключевые решения (ADR)
-
 | Решение | Почему | Где |
 |---------|--------|-----|
-| `reqwest::blocking` для конвертера URL | Внешний сервис медленный (до 60с); вызов один раз, дальше кэш на диске | [01](./docs/adr/01-blocking-url-converter.md) |
-| Нет `teloxide` / `vk-sdk` | 4 метода Bot API и 3 метода VK API проще держать в reqwest | [02](./docs/adr/02-no-notif-sdks.md) |
+| `wreq` вместо `reqwest` в раннийме | JA3/JA4-эмуляция против блокировок Авито; `blocking` оставлен только в dev-dep тестов | [08](./docs/adr/08-wreq-migration.md) |
+| Нет `teloxide` / `vk-sdk` | 4 метода Bot API и 3 метода VK API проще держать в wreq | [02](./docs/adr/02-no-notif-sdks.md) |
 | `serde(rename_all = "camelCase")` на `Item` | Иначе `priceDetailed`/`urlPath` молча игнорировались | [03](./docs/adr/03-camelcase-item-fields.md) |
 | lib + bin раздельно | интеграционные тесты (`tests/`) требуют публичного API | [04](./docs/adr/04-lib-bin-split.md) |
 | `api_base_override` | e2e-прогон против мока Авито без cookies/прокси | [05](./docs/adr/05-api-base-override-for-testability.md) |
@@ -91,3 +90,5 @@ cargo test --test evals    # извлечение, dedup, фильтры
 cargo test --test datasets # golden-сверка с evals/datasets/v1/*.json
 cargo test --test gen_datasets -- --ignored  # обновить датасеты
 ```
+Сборка тянет BoringSSL через `btls-sys` — нужен C-тулчейн
+(`cmake`, `perl`, `clang`/`cc`); на Arch это `pacman -S cmake perl clang`.

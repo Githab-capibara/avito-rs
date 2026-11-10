@@ -2,7 +2,7 @@
 //!
 //! Порт `integrations/notifications/vk.py` + `utils/send_report_to_vk.py`
 //! (m-вызовы: `upload` → `photo.saveMessagesPhoto` → `messages.send`).
-//! Без крейта `vk-sdk`, только reqwest.
+//! Без крейта `vk-sdk`, только wreq.
 
 use std::time::Duration;
 
@@ -11,11 +11,11 @@ use anyhow::{Context, Result};
 use super::backoff::Backoff;
 use crate::dto::{AppConfig, Notification};
 use crate::security::Redactor;
+use wreq::Client;
 
 /// Один экземпляр VK-бота.
-#[derive(Debug)]
 pub struct VkNotifier {
-    http: reqwest::Client,
+    http: wreq::Client,
     token: String,
     peer_ids: Vec<i64>,
     redactor: Redactor,
@@ -37,7 +37,7 @@ impl VkNotifier {
         if cfg.notifications.vk_peer_ids.is_empty() {
             return Ok(None);
         }
-        let http = reqwest::Client::builder()
+        let http = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .context("build vk client")?;
@@ -155,8 +155,8 @@ impl VkNotifier {
         if upload_url.is_empty() {
             return Ok(None);
         }
-        let part = reqwest::multipart::Part::bytes(bytes.to_vec());
-        let form = reqwest::multipart::Form::new().part("photo", part);
+        let part = wreq::multipart::Part::bytes(bytes.to_vec());
+        let form = wreq::multipart::Form::new().part("photo", part);
         let saved = match self.http.post(&upload_url).multipart(form).send().await {
             Ok(r) => match r.error_for_status() {
                 Ok(ok_r) => ok_r.json::<serde_json::Value>().await.ok(),

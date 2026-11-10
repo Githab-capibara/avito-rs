@@ -20,13 +20,19 @@ tokio = { version = "1", features = [
     "signal",
     "sync",
 ] }
-reqwest = { version = "0.12", default-features = false, features = [
-    "rustls-tls",
+reqwest = { version = "0.12", default-features = false, features = ["blocking"] }
+wreq = { version = "0.16", default-features = false, features = [
+    "webpki-roots",
+    "tokio-rt",
+    "charset",
+    "cookies",
     "gzip",
     "json",
-    "cookies",
     "multipart",
-    "blocking",
+    "form",
+    "query",
+    "socks",
+    "stream",
 ] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -61,7 +67,6 @@ optional = true
 [dev-dependencies]
 axum = "0.7"
 tempfile = "3"
-
 [profile.release]
 opt-level = 3
 lto = true

@@ -1,4 +1,4 @@
-//! Провайдер Авито: reqwest-клиент с тремя режимами получения данных,
+//! Провайдер Авито: wreq-клиент с тремя режимами получения данных,
 //! ретраями, backoff и ротацией прокси при блокировках.
 //!
 //! Режимы (`[app] fetch_mode`):
@@ -18,8 +18,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, COOKIE, USER_AGENT};
-use reqwest::{Client, Proxy};
+use wreq::header::{HeaderMap, HeaderValue, ACCEPT, COOKIE, USER_AGENT};
+use wreq::{Client, Proxy};
 
 use super::backoff::{Backoff, TokenBucket};
 use super::{BlockReason, FetchedPage, PageFetcher, TargetKind};
@@ -90,7 +90,7 @@ impl AvitoClient {
 
         Ok(Self {
             http: Arc::new(std::sync::Mutex::new(
-                builder.build().context("failed to build reqwest client")?,
+                builder.build().context("failed to build wreq client")?,
             )),
             bucket: Arc::new(TokenBucket::per_minute(cfg.req_per_min)),
             backoff: Backoff::default(),
@@ -268,14 +268,7 @@ impl AvitoClient {
     /// Страница каталога (список объявлений) — основной путь монитора.
     pub async fn fetch_catalog(&self, source_url: &str, page: u32) -> Result<FetchedPage> {
         let url = match self.cfg.fetch_mode {
-            FetchMode::SpfaUrl => {
-                let source_url = source_url.to_owned();
-                let cfg = Arc::clone(&self.cfg);
-                let redactor = Arc::clone(&self.redactor);
-                tokio::task::spawn_blocking(move || convert_url(&source_url, page, &cfg, &redactor))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("url-converter task: {e}"))??
-            }
+            FetchMode::SpfaUrl => convert_url(source_url, page, &self.cfg, &self.redactor).await?,
             FetchMode::DirectHtml => paginate_url(source_url, page),
             FetchMode::MobileApi => mobile_catalog_url(&self.cfg, source_url, page),
         };
@@ -317,7 +310,7 @@ impl PageFetcher for AvitoClient {
 ///
 /// Внешний сервис отвечает медленно (до минуты), поэтому вызов блокирующий
 /// и делается один раз на URL — дальше работает кэш.
-fn convert_url(
+async fn convert_url(
     source_url: &str,
     page: u32,
     cfg: &AppConfig,
@@ -330,17 +323,21 @@ fn convert_url(
     }
 
     let url = format!("{base}/avito-url/");
-    let request = reqwest::blocking::Client::builder()
+    // Отдельный клиент без кук/прокси: конвертер сторонний, JA3-эмуляция ему
+    // не нужна, зато важен свой таймаут (оригинал ждёт до 120с).
+    let client = Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
-        .context("build url-converter client")?
+        .context("build url-converter client")?;
+    let response = client
         .post(&url)
         .header("Content-Type", "application/json")
-        .body(serde_json::json!({ "url": source_url }).to_string());
-    let response = request
+        .body(serde_json::json!({ "url": source_url }).to_string())
         .send()
+        .await
         .with_context(|| format!("url-converter request: {}", redactor.redact(&url)))?
         .json::<serde_json::Value>()
+        .await
         .map_err(|e| anyhow::anyhow!("url-converter body: {e}"))?;
 
     let api_url = response

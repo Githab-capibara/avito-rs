@@ -11,14 +11,14 @@ use anyhow::{Context, Result};
 use super::backoff::Backoff;
 use crate::dto::{AppConfig, Notification};
 use crate::security::Redactor;
+use wreq::{Client, Proxy};
 
 /// Базовый URL Bot API.
 const API_BASE: &str = "https://api.telegram.org";
 
 /// Один экземпляр Telegram-бота.
-#[derive(Debug)]
 pub struct TelegramNotifier {
-    http: reqwest::Client,
+    http: wreq::Client,
     token: String,
     chat_ids: Vec<i64>,
     /// Отправлять без `parse_mode` (HTML ломается на длинных описаниях).
@@ -42,11 +42,11 @@ impl TelegramNotifier {
         if cfg.notifications.telegram_chat_ids.is_empty() {
             return Ok(None);
         }
-        let mut builder = reqwest::Client::builder()
+        let mut builder = Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10));
         if let Some(p) = &cfg.notifications.telegram_proxy {
-            builder = builder.proxy(reqwest::Proxy::all(p).context("bad telegram proxy")?);
+            builder = builder.proxy(Proxy::all(p).context("bad telegram proxy")?);
         }
         let http = builder.build().context("build telegram client")?;
         Ok(Some(Self {
@@ -116,13 +116,13 @@ impl TelegramNotifier {
             .await
             .with_context(|| "telegram image bytes")?;
         let url = format!("{API_BASE}/bot{}/sendPhoto", self.token);
-        let form = reqwest::multipart::Form::new()
+        let form = wreq::multipart::Form::new()
             .text("chat_id", chat_id.to_string())
             .text("caption", text.to_owned())
             .text("parse_mode", "MarkdownV2".to_owned())
             .part(
                 "photo",
-                reqwest::multipart::Part::bytes(image.to_vec())
+                wreq::multipart::Part::bytes(image.to_vec())
                     .file_name("photo.jpg")
                     .mime_str("image/jpeg")
                     .context("photo mime")?,

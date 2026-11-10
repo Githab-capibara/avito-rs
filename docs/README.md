@@ -15,6 +15,7 @@
 | [05](adr/05-api-base-override-for-testability.md) | `api_base_override` для e2e |
 | [06](adr/06-rest-api-serve-subcommand.md) | Команда `serve` (feature `api`) |
 | [07](adr/07-toml-1.md) | toml 1.2 + позиция ошибки в парсере конфига |
+| [08](adr/08-wreq-migration.md) | Рантайм-стек HTTP на `wreq` (JA3/JA4) |
 
 ## Связанные материалы
 
