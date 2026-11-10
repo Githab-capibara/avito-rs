@@ -49,7 +49,7 @@ thiserror = "1"
 default = []
 api = ["dep:axum"]
 xlsx = ["dep:rust_xlsxwriter"]
-html-fallback = ["dep:scraper"]
+html-fallback = ["dep:tl"]
 
 [dependencies.axum]
 version = "0.7"
@@ -61,8 +61,8 @@ features = ["http1", "tokio", "json"]
 version = "0.6"
 optional = true
 
-[dependencies.scraper]
-version = "0.20"
+[dependencies.tl]
+version = "0.7"
 optional = true
 
 [dev-dependencies]

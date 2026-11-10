@@ -10,38 +10,33 @@ use crate::dto::Listing;
 use crate::providers::FetchedPage;
 use sonic_rs::JsonValueTrait;
 
-/// Селектор оригинального скрипта состояния.
-const SCRIPT_MARKER: &str = "mime/invalid";
-
 /// Минимальная длина HTML для разбора (пустая страница — не страница).
 const MIN_HTML_LEN: usize = 64;
 
 /// CSS-подобный парсер `<script type="..." data-mfe-state="true">`.
 ///
-/// `scraper` в оригинале строит DOM; здесь достаточно линейного прохода —
-/// линейный разбор дешевле и не требует разбора всего документа.
-fn find_state_script(html: &str) -> Option<&str> {
-    let lower = html.to_ascii_lowercase();
-    let mut cursor = 0usize;
-    while let Some(rel) = lower[cursor..].find("<script") {
-        let start = cursor + rel;
-        let open_end = lower[start..].find('>')? + start;
-        let tag = &lower[start..=open_end];
-        let is_state = tag.contains(SCRIPT_MARKER)
-            && tag.contains("data-mfe-state")
-            && !tag.contains("sandbox");
-        if !is_state {
-            cursor = open_end + 1;
-            continue;
-        }
-        let close = lower[open_end..].find("</script")? + open_end;
-        let body = html.get((open_end + 1)..close)?;
-        if body.trim().is_empty() {
-            return None;
-        }
-        return Some(body);
-    }
-    None
+/// Оригинал строит DOM через `scraper`; `tl` делает то же самое, но
+/// SIMD-парсингом и без полного DOM-дерева — ищем только нужный тег
+/// селектором `script[type][data-mfe-state]` (без `sandbox`: такие теги
+/// в браузере не исполняются и не несут состояние).
+fn find_state_script(html: &str) -> Option<String> {
+    let dom = tl::parse(html, tl::ParserOptions::default()).ok()?;
+    let parser = dom.parser();
+    let handle = dom
+        .query_selector("script[type][data-mfe-state]")?
+        .find(|node| {
+            node.get(parser).is_some_and(|node| {
+                node.as_tag().is_some_and(|tag| {
+                    let attrs = tag.attributes();
+                    attrs.get("type").flatten().is_some_and(|v| {
+                        String::from_utf8_lossy(v.as_bytes()).contains("mime/invalid")
+                    }) && attrs.get("sandbox").flatten().is_none()
+                })
+            })
+        })?;
+    let tag = handle.get(parser)?.as_tag()?;
+    let body = tag.inner_text(parser);
+    (!body.trim().is_empty()).then(|| body.into_owned())
 }
 
 /// HTML-unescape (порт `html.unescape` из оригинального BS4-пути).
@@ -145,7 +140,7 @@ pub fn extract_state(html: &str) -> Result<Vec<Listing>, ExtractError> {
         Some(s) => s,
         None => return Err(ExtractError::NoJson),
     };
-    let unescaped = html_unescape(script);
+    let unescaped = html_unescape(&script);
     let value: sonic_rs::Value = sonic_rs::from_str(unescaped.trim())
         .map_err(|e| ExtractError::MalformedJson(e.to_string()))?;
     let origin = "<script data-mfe-state>";
@@ -212,7 +207,7 @@ impl V2HtmlExtractor {
     /// Нет скрипта / скрипт без `hasMessages` / битый JSON.
     pub fn state(html: &str) -> Result<sonic_rs::Value, ExtractError> {
         let script = find_state_script(html).ok_or(ExtractError::NoJson)?;
-        let unescaped = html_unescape(script);
+        let unescaped = html_unescape(&script);
         sonic_rs::from_str(unescaped.trim()).map_err(|e| ExtractError::MalformedJson(e.to_string()))
     }
 }
@@ -226,7 +221,36 @@ mod tests {
             <script type="mime/invalid" data-mfe-state="true">{"a":1}</script>
             <script>var x = 2;</script>
         </body></html>"#;
-        assert_eq!(find_state_script(html), Some("{\"a\":1}"));
+        assert_eq!(find_state_script(html).as_deref(), Some("{\"a\":1}"));
+    }
+
+    /// `inner_text` тега `<script>` должен вернуть сырой текст: Avito кладёт
+    /// туда JSON с `\u0022`, `\u003c` (escaped `<`), а реальные `<`, `&` —
+    /// HTML-entities, которые обязаны выжить до `html_unescape`.
+    #[test]
+    fn state_script_keeps_entities_and_escapes_verbatim() {
+        let html = r#"<html><body>
+            <script type="mime/invalid" data-mfe-state="true">
+                {"loaderData": {"data": {"i18n": {"hasMessages": true},
+                 "note": "a &amp; b \u003c script \u003e/script \u003e"}}}
+            </script>
+        </body></html>"#;
+        let script = find_state_script(html).expect("state script");
+        // entities не должны быть декодированы tl, иначе `&amp;` сломает JSON
+        assert!(script.contains("a &amp; b"), "entity preserved: {script}");
+        // JS-escapes тоже нужны como есть — `\u003c` остаётся escape-последовательностью
+        assert!(script.contains("\\u003c"), "js escape preserved: {script}");
+        // и декодирование даёт валидный JSON
+        let value: sonic_rs::Value =
+            sonic_rs::from_str(html_unescape(&script).trim()).expect("valid json");
+        assert_eq!(
+            JsonValueTrait::pointer(
+                &value,
+                &sonic_rs::pointer!["loaderData", "data", "i18n", "hasMessages"]
+            )
+            .and_then(|v| v.as_bool()),
+            Some(true)
+        );
     }
     #[test]
     fn skips_plain_scripts_and_sandbox_tag() {
