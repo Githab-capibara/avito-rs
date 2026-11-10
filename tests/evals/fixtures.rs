@@ -137,7 +137,7 @@ impl FixtureFetcher {
         Ok(FetchedPage {
             url: url.to_owned(),
             status: 200,
-            body: serde_json::from_str(&raw).ok(),
+            body: sonic_rs::from_str(&raw).ok(),
             raw_body: raw.into_bytes(),
         })
     }

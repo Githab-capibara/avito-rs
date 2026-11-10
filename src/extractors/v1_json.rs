@@ -7,6 +7,7 @@
 //! не теряет весь каталог (в оригинале `ValidationError` ронял страницу в `continue`).
 
 use serde::Deserialize;
+use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 
 use super::{ExtractError, Extractor, ExtractorKind};
 use crate::dto::Listing;
@@ -29,7 +30,7 @@ pub struct ItemsResponse {
 pub struct Item {
     /// В оригинале `int | dict | None` — нормализуем в строку.
     #[serde(default)]
-    pub id: Option<serde_json::Value>,
+    pub id: Option<sonic_rs::Value>,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -45,16 +46,16 @@ pub struct Item {
     #[serde(default)]
     pub is_reserved: Option<bool>,
     #[serde(default)]
-    pub iva: Option<serde_json::Value>,
+    pub iva: Option<sonic_rs::Value>,
     #[serde(default)]
     pub geo: Option<Geo>,
     #[serde(default)]
     pub seller_id: Option<String>,
     #[serde(default)]
-    pub images: Option<serde_json::Value>,
+    pub images: Option<sonic_rs::Value>,
     /// `coords` (lat/lng/address_user) как в оригинале.
     #[serde(default)]
-    pub coords: Option<serde_json::Value>,
+    pub coords: Option<sonic_rs::Value>,
 }
 
 /// `PriceDetailed` из оригинала.
@@ -90,12 +91,16 @@ fn parse_price_text(s: &str) -> Option<u64> {
 
 impl V1JsonExtractor {
     /// Нормализовать `id` (`int | dict | None`) в строку.
-    fn normalize_id(v: &serde_json::Value) -> Option<String> {
-        match v {
-            serde_json::Value::Null => None,
-            serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            serde_json::Value::Bool(true) => Some("true".to_owned()),
+    fn normalize_id(v: &sonic_rs::Value) -> Option<String> {
+        use sonic_rs::JsonType::*;
+        match v.get_type() {
+            Null => None,
+            String => {
+                let s = v.as_str()?;
+                (!s.is_empty()).then(|| s.to_owned())
+            }
+            Number => Some(v.as_number()?.to_string()),
+            Boolean if v.as_bool() == Some(true) => Some("true".to_owned()),
             _ => None,
         }
     }
@@ -116,33 +121,45 @@ impl V1JsonExtractor {
     }
 
     /// Порт `_add_promotion_to_ads`: `iva.DateInfoStep[].payload.vas[].title == "Продвинуто"`.
-    fn is_promoted(iva: &serde_json::Value) -> bool {
-        let Some(steps) = iva.get("DateInfoStep").and_then(|s| s.as_array()) else {
+    fn is_promoted(iva: &sonic_rs::Value) -> bool {
+        let Some(obj) = iva.as_object() else {
+            return false;
+        };
+        let Some(steps) = obj.get(&"DateInfoStep").and_then(|s| s.as_array()) else {
             return false;
         };
         steps.iter().any(|step| {
-            step.get("payload")
-                .and_then(|p| p.get("vas"))
+            step.as_object()
+                .and_then(|p| p.get(&"payload"))
+                .and_then(|p| p.as_object())
+                .and_then(|p| p.get(&"vas"))
                 .and_then(|v| v.as_array())
                 .is_some_and(|vas| {
-                    vas.iter()
-                        .any(|v| v.get("title").and_then(|t| t.as_str()) == Some("Продвинуто"))
+                    vas.iter().any(|v| {
+                        v.as_object()
+                            .and_then(|o| o.get(&"title"))
+                            .and_then(|t| t.as_str())
+                            == Some("Продвинуто")
+                    })
                 })
         })
     }
 
     /// Все URL изображений (для колонки XLSX «Изображения»).
     #[must_use]
-    pub fn all_images(images: &serde_json::Value) -> Vec<String> {
+    pub fn all_images(images: &sonic_rs::Value) -> Vec<String> {
         images
             .as_array()
             .map(|arr| {
                 arr.iter()
                     .filter_map(|entry| {
+                        // Оригинал кладёт одну пару `<ключ>: {..., "<key>Url": "…"}`;
+                        // берём первое строковое значение любого ключа объекта.
                         entry
                             .as_object()?
-                            .values()
-                            .find_map(|url| url.as_str())
+                            .iter()
+                            .map(|(_, v)| v)
+                            .find_map(|v| v.as_str())
                             .map(str::to_owned)
                     })
                     .collect()
@@ -151,7 +168,7 @@ impl V1JsonExtractor {
     }
 
     /// Порт `Photo`: `images[*].<*Url>` → первый URL картинки.
-    fn first_image(images: &serde_json::Value) -> Option<String> {
+    fn first_image(images: &sonic_rs::Value) -> Option<String> {
         let arr = images.as_array()?;
         for entry in arr {
             if let Some(obj) = entry.as_object() {
@@ -172,9 +189,15 @@ impl V1JsonExtractor {
     ///
     /// # Errors
     /// Узел не десериализуется в `ItemsResponse`.
-    pub fn extract_items(&self, node: &serde_json::Value) -> Result<Vec<Listing>, String> {
+    ///
+    /// Примечание по реализации: `sonic_rs::from_value` не умеет
+    /// десериализовать `sonic_rs::Value` в поле структуры («invalid type:
+    /// newtype struct»), поэтому идём через строку — страница каталога ~50 КБ,
+    /// лишний проход дешевле HTTP-запроса, который эту страницу приносит.
+    pub fn extract_items(&self, node: &sonic_rs::Value) -> Result<Vec<Listing>, String> {
         let parsed: ItemsResponse =
-            serde_json::from_value(node.clone()).map_err(|e| e.to_string())?;
+            sonic_rs::from_str(&sonic_rs::to_string(node).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
         Ok(parsed
             .items
             .into_iter()
@@ -243,7 +266,7 @@ mod extra_tests {
 
     #[test]
     fn extracts_all_images_and_coords() {
-        let node = serde_json::json!({"items": [{
+        let node = sonic_rs::json!({"items": [{
             "id": 7,
             "images": [
                 {"140x105": "https://a/1.jpg", "640x480": "https://a/1big.jpg"},
@@ -261,7 +284,7 @@ mod extra_tests {
 
     #[test]
     fn priced_via_normalized_price_when_value_absent() {
-        let node = serde_json::json!({"items": [{
+        let node = sonic_rs::json!({"items": [{
             "id": "abc", "normalizedPrice": "5 500 ₽"
         }]});
         let out = V1JsonExtractor.extract_items(&node).expect("items");
@@ -271,7 +294,7 @@ mod extra_tests {
 
     #[test]
     fn promotion_detected_from_iva_steps() {
-        let node = serde_json::json!({"items": [{
+        let node = sonic_rs::json!({"items": [{
             "id": 1,
             "iva": {"DateInfoStep": [{"payload": {"vas": [
                 {"title": "Продвинуто"}

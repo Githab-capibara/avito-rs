@@ -16,6 +16,7 @@
 | [06](adr/06-rest-api-serve-subcommand.md) | Команда `serve` (feature `api`) |
 | [07](adr/07-toml-1.md) | toml 1.2 + позиция ошибки в парсере конфига |
 | [08](adr/08-wreq-migration.md) | Рантайм-стек HTTP на `wreq` (JA3/JA4) |
+| [09](adr/09-sonic-rs-json.md) | Hot-path JSON на `sonic-rs` (SIMD) |
 
 ## Связанные материалы
 

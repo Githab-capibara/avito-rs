@@ -17,7 +17,7 @@ pub struct FetchedPage {
     /// HTTP-статус.
     pub status: u16,
     /// JSON-тело, если ответ провайдера его отдал (mobile API / конвертер).
-    pub body: Option<serde_json::Value>,
+    pub body: Option<sonic_rs::Value>,
     /// Сырые байты ответа.
     pub raw_body: Vec<u8>,
 }
@@ -31,7 +31,7 @@ impl FetchedPage {
 
     /// Хелпер для тестов: JSON-ответ.
     #[must_use]
-    pub fn from_json(url: &str, body: serde_json::Value) -> Self {
+    pub fn from_json(url: &str, body: sonic_rs::Value) -> Self {
         let raw = body.to_string().into_bytes();
         Self {
             url: url.to_owned(),
@@ -47,7 +47,7 @@ impl FetchedPage {
         Self {
             url: url.to_owned(),
             status: 200,
-            body: serde_json::from_slice(&raw).ok(),
+            body: sonic_rs::from_slice(&raw).ok(),
             raw_body: raw,
         }
     }

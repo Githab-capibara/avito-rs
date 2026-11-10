@@ -5,6 +5,7 @@
 
 use anyhow::{Context, Result};
 use rust_xlsxwriter::{Format, Workbook, XlsxError};
+use sonic_rs::JsonValueTrait;
 
 use super::ResultExporter;
 use crate::dto::Listing;
@@ -174,7 +175,7 @@ impl XlsxExporter {
     fn append_rows(&self, ads: &[Listing]) -> Result<()> {
         let sidecar = self.sidecar_path();
         let old: Vec<Vec<String>> = match std::fs::read_to_string(&sidecar) {
-            Ok(t) => serde_json::from_str(&t)
+            Ok(t) => sonic_rs::from_str(&t)
                 .context("parse xlsx sidecar")
                 .unwrap_or_default(),
             Err(_) => Vec::new(),
@@ -183,7 +184,7 @@ impl XlsxExporter {
         self.rewrite_with(old.clone(), ads)?;
         let mut all = old;
         all.extend(new_rows);
-        std::fs::write(&sidecar, serde_json::to_string(&all)?)
+        std::fs::write(&sidecar, sonic_rs::to_string(&all)?)
             .with_context(|| format!("write sidecar {}", sidecar.display()))?;
         Ok(())
     }
@@ -302,12 +303,12 @@ mod tests {
     #[test]
     fn coords_render_pair() {
         let ad = Listing {
-            coords: Some(serde_json::json!({"lat": 45.0, "lng": 39.0})),
+            coords: Some(sonic_rs::json!({"lat": 45.0, "lng": 39.0})),
             ..Default::default()
         };
         assert_eq!(coords(&ad), "45;39");
         let ad = Listing {
-            coords: Some(serde_json::json!({"address_user": "Krasnodar"})),
+            coords: Some(sonic_rs::json!({"address_user": "Krasnodar"})),
             ..Default::default()
         };
         assert_eq!(address_user(&ad), "Krasnodar");

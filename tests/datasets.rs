@@ -18,7 +18,7 @@ fn load(name: &str) -> FetchedPage {
     FetchedPage {
         url: "https://www.avito.ru/all/telefony".to_owned(),
         status: 200,
-        body: serde_json::from_str(&raw).ok(),
+        body: sonic_rs::from_str(&raw).ok(),
         raw_body: raw.into_bytes(),
     }
 }
@@ -66,7 +66,7 @@ fn dataset_unknown_shape_fails_typed() {
     let page = FetchedPage {
         url: "fixture".to_owned(),
         status: 200,
-        body: serde_json::from_str(bad).ok(),
+        body: sonic_rs::from_str(bad).ok(),
         raw_body: bad.as_bytes().to_vec(),
     };
     assert!(matches!(

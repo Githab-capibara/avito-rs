@@ -57,7 +57,7 @@ pub struct Listing {
     pub images: Vec<String>,
     /// Координаты (`coords`: lat/lng/address_user из mobile API).
     #[serde(default)]
-    pub coords: Option<serde_json::Value>,
+    pub coords: Option<sonic_rs::Value>,
     /// Телефон продавца (enrichment через `parse_phone`).
     #[serde(default)]
     pub phone: Option<String>,

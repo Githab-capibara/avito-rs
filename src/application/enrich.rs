@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
+use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use tokio::sync::Semaphore;
 
 use crate::dto::Listing;
@@ -22,7 +23,7 @@ use crate::providers::avito::AvitoClient;
 /// Порт `_extract_item_details`: (описание, всего, сегодня).
 #[must_use]
 pub fn extract_item_details(
-    payload: &serde_json::Value,
+    payload: &sonic_rs::Value,
 ) -> (Option<String>, Option<u64>, Option<u64>) {
     let mobile = nested(payload, &["success", "mobile"]);
     let mobile_views = nested(&mobile, &["stats", "views"]);
@@ -54,7 +55,7 @@ pub fn extract_item_details(
 }
 
 /// Собрать описание из `segments[].text` (`\u2028` → `\n`).
-fn card_description(card_params: &serde_json::Value) -> Option<String> {
+fn card_description(card_params: &sonic_rs::Value) -> Option<String> {
     let node = nested(card_params, &["description"]);
     let arr = node.get("segments").and_then(|s| s.as_array())?;
     let text: String = arr
@@ -67,12 +68,14 @@ fn card_description(card_params: &serde_json::Value) -> Option<String> {
 }
 
 /// Порт `nested_dict`: дойти по ключам, вернуть `{}` при любом обрыве.
-fn nested(value: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
-    let mut current = value;
+fn nested(value: &sonic_rs::Value, keys: &[&str]) -> sonic_rs::Value {
+    let mut current: &sonic_rs::Value = value;
     for key in keys {
-        match current.get(key) {
+        match JsonValueTrait::get(current, key) {
             Some(next) => current = next,
-            None => return serde_json::Value::Object(Default::default()),
+            // Оригинал возвращает `{}`; здесь пустой объект даёт None для
+            // последующих `get`, что для callers эквивалентно.
+            None => return sonic_rs::Value::new_object(),
         }
     }
     current.clone()
@@ -80,7 +83,7 @@ fn nested(value: &serde_json::Value, keys: &[&str]) -> serde_json::Value {
 
 /// Порт `count`: `bool` игнорируется, `int` берётся как есть, строка —
 /// только цифры.
-fn count(value: Option<&serde_json::Value>) -> Option<u64> {
+fn count(value: Option<&sonic_rs::Value>) -> Option<u64> {
     let value = value?;
     if value.is_boolean() {
         return None;
@@ -215,29 +218,30 @@ pub async fn parse_description(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sonic_rs::json;
     #[test]
     fn nested_dict_degrades_to_empty() {
-        let v = serde_json::json!({"success": {}});
+        let v = json!({"success": {}});
         assert!(nested(&v, &["success", "mobile"]).is_object());
-        assert!(nested(&serde_json::json!({}), &["a"]).is_object());
+        assert!(nested(&json!({}), &["a"]).is_object());
     }
     #[test]
     fn counts_ints_str_and_ignores_bools() {
-        let v = serde_json::json!({
+        let v = json!({
             "a": 5,
             "b": "1 234",
             "c": true,
             "d": "нет"
         });
-        assert_eq!(count(v.get("a")), Some(5));
-        assert_eq!(count(v.get("b")), Some(1234));
-        assert_eq!(count(v.get("c")), None);
-        assert_eq!(count(v.get("d")), None);
+        assert_eq!(count(JsonValueTrait::get(&v, "a")), Some(5));
+        assert_eq!(count(JsonValueTrait::get(&v, "b")), Some(1234));
+        assert_eq!(count(JsonValueTrait::get(&v, "c")), None);
+        assert_eq!(count(JsonValueTrait::get(&v, "d")), None);
         assert_eq!(count(None), None);
     }
     #[test]
     fn mobile_stats_take_priority() {
-        let payload = serde_json::json!({
+        let payload = json!({
             "success": {"mobile": {"stats": {"views": {
                 "total": 10, "today": 2
             }}, "description": "  hello  "}}
@@ -249,7 +253,7 @@ mod tests {
     }
     #[test]
     fn falls_back_to_card_views_and_segments() {
-        let payload = serde_json::json!({
+        let payload = json!({
             "success": {"view": {"scenario": {"beduin": {"main": {"params": {
                 "metaDataAndStats": {"views": {
                     "total": "1 200", "todayViews": 7
@@ -266,7 +270,7 @@ mod tests {
     }
     #[test]
     fn segment_separator_becomes_newline() {
-        let payload = serde_json::json!({
+        let payload = json!({
             "success": {"view": {"scenario": {"beduin": {"main": {"params": {
                 "description": {"segments": [{"text": "a\u{2028}b"}]}
             }}}}}}

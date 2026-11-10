@@ -8,6 +8,7 @@ use super::v1_json::V1JsonExtractor;
 use super::{ExtractError, Extractor, ExtractorKind};
 use crate::dto::Listing;
 use crate::providers::FetchedPage;
+use sonic_rs::JsonValueTrait;
 
 /// Селектор оригинального скрипта состояния.
 const SCRIPT_MARKER: &str = "mime/invalid";
@@ -145,13 +146,12 @@ pub fn extract_state(html: &str) -> Result<Vec<Listing>, ExtractError> {
         None => return Err(ExtractError::NoJson),
     };
     let unescaped = html_unescape(script);
-    let value: serde_json::Value = serde_json::from_str(unescaped.trim())
+    let value: sonic_rs::Value = sonic_rs::from_str(unescaped.trim())
         .map_err(|e| ExtractError::MalformedJson(e.to_string()))?;
     let origin = "<script data-mfe-state>";
     // Оригинал: data.get("i18n", {}).get("hasMessages") →
     // data.get("loaderData", {}).get("data", {})
-    if !value
-        .pointer("/i18n/hasMessages")
+    if !JsonValueTrait::pointer(&value, &sonic_rs::pointer!["i18n", "hasMessages"])
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
     {
@@ -159,7 +159,7 @@ pub fn extract_state(html: &str) -> Result<Vec<Listing>, ExtractError> {
             origin: "i18n.hasMessages=false".to_owned(),
         });
     }
-    let state = match value.pointer("/loaderData/data") {
+    let state = match JsonValueTrait::pointer(&value, &sonic_rs::pointer!["loaderData", "data"]) {
         Some(s) => s,
         None => {
             return Err(ExtractError::NoItems {
@@ -210,11 +210,10 @@ impl V2HtmlExtractor {
     ///
     /// # Errors
     /// Нет скрипта / скрипт без `hasMessages` / битый JSON.
-    pub fn state(html: &str) -> Result<serde_json::Value, ExtractError> {
+    pub fn state(html: &str) -> Result<sonic_rs::Value, ExtractError> {
         let script = find_state_script(html).ok_or(ExtractError::NoJson)?;
         let unescaped = html_unescape(script);
-        serde_json::from_str(unescaped.trim())
-            .map_err(|e| ExtractError::MalformedJson(e.to_string()))
+        sonic_rs::from_str(unescaped.trim()).map_err(|e| ExtractError::MalformedJson(e.to_string()))
     }
 }
 
@@ -275,7 +274,7 @@ mod tests {
         });
         let html = format!(
             "<script type=\"mime/invalid\" data-mfe-state=\"true\">{}</script>",
-            serde_json::to_string(&state).unwrap()
+            sonic_rs::to_string(&state).unwrap()
         );
         let ads = extract_state(&html).expect("extract");
         assert_eq!(ads.len(), 1);

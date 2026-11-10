@@ -14,6 +14,7 @@ pub mod v1_json;
 pub mod v2_html;
 
 use crate::dto::Listing;
+use sonic_rs::JsonValueTrait;
 
 /// Ошибки извлечения (не могут уронить монитор — только пометить страницу битой).
 #[derive(Debug, thiserror::Error)]
@@ -93,7 +94,7 @@ pub fn active(cfg_kind: ExtractorKind) -> Box<dyn Extractor> {
 /// Точный порт `AvitoParse._extract_api_catalog`: payload → result → catalog
 /// → result → payload, первый объект с непустым `items`.
 #[must_use]
-pub fn find_items_node(payload: &serde_json::Value) -> Option<&serde_json::Value> {
+pub fn find_items_node(payload: &sonic_rs::Value) -> Option<&sonic_rs::Value> {
     let candidates = [
         payload.get("catalog"),
         payload
@@ -114,7 +115,7 @@ pub fn extract_from_json_str(kind: ExtractorKind, raw: &str) -> Result<Vec<Listi
     let page = FetchedPage {
         url: "fixture".to_owned(),
         status: 200,
-        body: serde_json::from_str(raw).map_err(|e| ExtractError::MalformedJson(e.to_string()))?,
+        body: sonic_rs::from_str(raw).map_err(|e| ExtractError::MalformedJson(e.to_string()))?,
         raw_body: raw.as_bytes().to_vec(),
     };
     active(kind).extract(&page)

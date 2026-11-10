@@ -13,7 +13,7 @@ fn page_from_json(raw: &str) -> FetchedPage {
     FetchedPage {
         url: "https://www.avito.ru/test".to_owned(),
         status: 200,
-        body: serde_json::from_str(raw).ok(),
+        body: sonic_rs::from_str(raw).ok(),
         raw_body: raw.as_bytes().to_vec(),
     }
 }
