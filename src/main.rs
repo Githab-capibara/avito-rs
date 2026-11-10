@@ -89,9 +89,23 @@ fn load_config(path: &std::path::Path) -> Result<AppConfig> {
     }
     let raw =
         std::fs::read_to_string(path).with_context(|| format!("read config {}", path.display()))?;
-    let cfg: AppConfig =
-        toml::from_str(&raw).with_context(|| format!("parse config {}", path.display()))?;
+    let cfg: AppConfig = toml::from_str(&raw).map_err(|e| toml_config_error(&raw, e, path))?;
     Ok(cfg)
+}
+
+/// Собрать ошибку разбора конфига с позицией в файле (toml 1.x несёт span).
+fn toml_config_error(raw: &str, err: toml::de::Error, path: &std::path::Path) -> anyhow::Error {
+    let detail = match err.span() {
+        Some(span) if raw.is_char_boundary(span.start) => {
+            let line = raw[..span.start].matches('\n').count() + 1;
+            let col = raw[..span.start]
+                .rfind('\n')
+                .map_or(span.start + 1, |nl| span.start - nl);
+            format!("{} (line {line}, column {col})", err.message())
+        }
+        _ => err.message().to_owned(),
+    };
+    anyhow::anyhow!("parse config {}: {detail}", path.display())
 }
 
 /// `validate-config`: разбор + проверки инвариантов.

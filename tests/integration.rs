@@ -127,3 +127,46 @@ fn api_serve_reports_status() {
     let _ = child.wait();
     assert!(ok, "API не ответил на /status за 5с");
 }
+
+/// Ошибка разбора конфига показывает строку/колонку (toml 1.x span в сообщении).
+#[test]
+fn validate_config_reports_line_and_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("bad.toml");
+    std::fs::write(
+        &cfg,
+        "interval_sec = 60\nmax_concurrent = 5\nreq_per_min = \"текст\"\n",
+    )
+    .expect("write config");
+    let out = Command::new(bin())
+        .args(["validate-config", "--config"])
+        .arg(&cfg)
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "битый конфиг должен быть ошибкой");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("line 3, column 15"),
+        "ожидали позицию в stderr, получили: {stderr}"
+    );
+    assert!(
+        stderr.contains("req_per_min") || stderr.contains("expected u32"),
+        "ожидали diagnóstico по полю, получили: {stderr}"
+    );
+}
+
+/// Синтаксическая ошибка TOML тоже несёт позицию.
+#[test]
+fn validate_config_reports_syntax_span() {
+    let dir = tempfile::tempdir().unwrap();
+    let cfg = dir.path().join("syntax.toml");
+    std::fs::write(&cfg, "[app\nurls = [\n").expect("write config");
+    let out = Command::new(bin())
+        .args(["validate-config", "--config"])
+        .arg(&cfg)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("line 1"), "ожидали позицию: {stderr}");
+}
